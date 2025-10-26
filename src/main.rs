@@ -19,6 +19,32 @@ fn generate_circle_fan(
 ) -> (Vec<Vertex>, Vec<i32>) {
     let mut vertices: Vec<Vertex> = vec![];
     let mut indices = vec![];
+
+    if segments == 3 {
+        // tri
+        vertices.push(Vertex {
+            position: FPoint::new(center.x, center.y - radius),
+            color,
+            tex_coord: FPoint::new(0.0, 0.0),
+        });
+        vertices.push(Vertex {
+            position: FPoint::new(center.x - radius, center.y + radius),
+            color,
+            tex_coord: FPoint::new(0.0, 0.0),
+        });
+        vertices.push(Vertex {
+            position: FPoint::new(center.x + radius, center.y + radius),
+            color,
+            tex_coord: FPoint::new(0.0, 0.0),
+        });
+
+        indices.push(0); // center
+        indices.push(1);
+        indices.push(2);
+
+        return (vertices, indices);
+    }
+
     // angle step
     let step = (std::f32::consts::PI * 2.0) / segments as f32;
 
@@ -56,6 +82,8 @@ fn generate_circle_fan(
 struct Body {
     x: f64,
     y: f64,
+    init_x: f64,
+    init_y: f64,
     v_x: f64,
     v_y: f64,
     mass: f64,
@@ -68,6 +96,8 @@ impl Body {
         Body {
             x,
             y,
+            init_x: x,
+            init_y: y,
             v_x,
             v_y,
             mass,
@@ -76,18 +106,12 @@ impl Body {
         }
     }
 
-    pub fn get_render(
-        &self,
-        canvas: &mut Canvas<Window>,
-        pan_x: f32,
-        pan_y: f32,
-        zoom: f32,
-    ) -> (Vec<Vertex>, Vec<i32>) {
+    pub fn get_render(&self, pan_x: f32, pan_y: f32, zoom: f32) -> (Vec<Vertex>, Vec<i32>) {
         if self.color == FColor::BLACK {
             return (vec![], vec![]);
         }
 
-        let (mut vertices, mut indices) = generate_circle_fan(
+        let (vertices, indices) = generate_circle_fan(
             FPoint::new(
                 (self.x as f32 * zoom) + pan_x,
                 (self.y as f32 * zoom) + pan_y,
@@ -98,39 +122,6 @@ impl Body {
         );
 
         return (vertices, indices);
-    }
-
-    pub fn render(&self, canvas: &mut Canvas<Window>, pan_x: f32, pan_y: f32, zoom: f32) {
-        if self.color == FColor::BLACK {
-            return;
-        }
-
-        let (mut vertices, mut indices) = generate_circle_fan(
-            FPoint::new(
-                (self.x as f32 * zoom) + pan_x,
-                (self.y as f32 * zoom) + pan_y,
-            ), // center
-            self.mass.abs().sqrt() as f32 * zoom.max(0.1), // radius
-            3,                                             // segments
-            self.color,                                    // color
-        );
-
-        vertices.append(
-            &mut generate_circle_fan(
-                FPoint::new(
-                    (self.x as f32 * zoom) + pan_x + 1000.0,
-                    (self.y as f32 * zoom) + pan_y,
-                ), // center
-                self.mass.abs().sqrt() as f32 * zoom.max(0.1), // radius
-                3,                                             // segments
-                FColor::GREY,                                  // color
-            )
-            .0,
-        );
-
-        indices.append(&mut indices.clone().iter().map(|i| i + 5).collect());
-
-        canvas.render_geometry(&vertices, None, &indices).unwrap();
     }
 }
 
@@ -163,7 +154,23 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut zoom = 1.0;
 
+    let mut dont_render_pinned = false;
+
     // for i in 0..3 {}
+
+    for x in 0..800 {
+        for y in 0..600 {
+            bodies.push(Body::new(
+                x.into(),
+                y.into(),
+                0.0,
+                0.0,
+                1.0,
+                false,
+                FColor::WHITE,
+            ));
+        }
+    }
 
     bodies.push(Body::new(
         660.6,
@@ -183,22 +190,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         FColor::BLUE,
     ));
-
-    // for x in 0..800 {
-    //     for y in 0..600 {
-    //         bodies.push(Body::new(
-    //             x.into(),
-    //             y.into(),
-    //             0.0,
-    //             0.0,
-    //             100.0,
-    //             false,
-    //             FColor::WHITE,
-    //         ));
-    //     }
-    // }
-
     bodies.push(Body::new(400.6, 600.6, 0.0, 0.0, 1000.0, true, FColor::RED));
+
     'running: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -207,6 +200,21 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => break 'running,
+
+                Event::KeyDown {
+                    timestamp,
+                    window_id,
+                    keycode,
+                    scancode,
+                    keymod,
+                    repeat,
+                    which,
+                    raw,
+                } => {
+                    if keycode == Some(Keycode::Space) {
+                        dont_render_pinned = !dont_render_pinned;
+                    }
+                }
 
                 Event::MouseButtonDown {
                     mouse_btn,
@@ -266,14 +274,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     mouse_x,
                     mouse_y,
                 } => {
-                    let delta_z = (y / 20.0) * zoom;
-                    zoom += delta_z;
+                    // This code is not mine, I stole it
+                    let zoom_factor = 1.0 + y / 20.0;
+                    let new_zoom = zoom * zoom_factor;
 
-                    pan_x += pan_x * delta_z;
-                    pan_y += pan_y * delta_z;
+                    pan_x = mouse_x - (mouse_x - pan_x) * (new_zoom / zoom);
+                    pan_y = mouse_y - (mouse_y - pan_y) * (new_zoom / zoom);
 
-                    pan_x -= mouse_x * delta_z;
-                    pan_y -= mouse_y * delta_z;
+                    zoom = new_zoom;
                 }
                 _ => {}
             }
@@ -288,8 +296,11 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut bodies_rendered = 0;
 
         for body in &bodies {
-            let (mut body_vertices, body_indices) =
-                body.get_render(&mut canvas, pan_x, pan_y, zoom);
+            if body.pinned && dont_render_pinned {
+                continue;
+            }
+
+            let (mut body_vertices, body_indices) = body.get_render(pan_x, pan_y, zoom);
 
             if body_vertices.len() == 0 {
                 continue;
@@ -300,7 +311,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             indices.append(
                 &mut body_indices
                     .iter()
-                    .map(|i| i + 5 * bodies_rendered)
+                    .map(|i| i + 3 * bodies_rendered)
                     .collect(),
             );
 
@@ -312,10 +323,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         canvas.present();
 
         // ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
-        // The rest of the game loop goes here...
 
         for body2 in bodies.clone() {
-            if body2.color == FColor::WHITE || body2.color == FColor::BLACK {
+            if body2.color == FColor::WHITE || body2.color == FColor::BLACK || body2.mass < 999.0 {
                 continue;
             }
 
@@ -333,7 +343,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // These are usually both sqrt so it works, collision
                 if dist_sq < body2.mass {
-                    body.color = FColor::BLACK;
+                    body.color = body2.color;
+                    body.pinned = true;
+                    body.x = body.init_x;
+                    body.y = body.init_y;
                 }
 
                 let force = body2.mass.abs() / dist_sq;
@@ -346,6 +359,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         for body in &mut bodies {
+            if body.pinned {
+                continue;
+            }
             body.x += body.v_x;
             body.y += body.v_y;
         }
