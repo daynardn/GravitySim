@@ -256,6 +256,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let significant_bodies = 4;
 
+    let mut pinned_bodies: Vec<Body> = vec![];
+
     'running: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -284,8 +286,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     if keycode == Some(Keycode::R) {
                         let body_len = bodies.len();
-                        for body in bodies[..body_len - significant_bodies].iter_mut() {
+                        for body in pinned_bodies[..body_len - significant_bodies].iter_mut() {
                             body.pinned = false;
+                            bodies.push(body.clone());
                         }
                     }
                 }
@@ -372,28 +375,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         canvas.clear();
         canvas.set_draw_color(Color::RGB(255, 255, 255));
 
+        let total_bodies = bodies.len();
+
         let (mut vertices, mut indices) = (vec![], vec![]);
 
         let mut bodies_rendered = 0;
 
-        for body in &bodies {
-            if body.pinned && render_mode != 0 {
-                continue;
-            } else if body.pinned {
-                canvas.set_draw_color(body.color);
-                canvas.draw_point(Point::new(
-                    ((body.x as f32 * zoom) + pan_x) as i32,
-                    ((body.y as f32 * zoom) + pan_y) as i32,
-                ))?;
-                continue;
-            }
-
+        for body in &bodies[..total_bodies - significant_bodies] {
             let (mut body_vertices, body_indices) = body.get_render(pan_x, pan_y, zoom);
-
-            if body_vertices.len() == 0 {
-                continue;
-            }
-
             vertices.append(&mut body_vertices);
 
             indices.append(
@@ -406,9 +395,17 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             bodies_rendered += 1;
         }
 
-        canvas.render_geometry(&vertices, None, &indices).unwrap();
+        if render_mode == 0 {
+            for pinned_body in pinned_bodies.iter() {
+                canvas.set_draw_color(pinned_body.color);
+                canvas.draw_point(Point::new(
+                    ((pinned_body.x as f32 * zoom) + pan_x) as i32,
+                    ((pinned_body.y as f32 * zoom) + pan_y) as i32,
+                ))?;
+            }
+        }
 
-        let total_bodies = bodies.len();
+        canvas.render_geometry(&vertices, None, &indices).unwrap();
 
         for body in bodies[total_bodies - significant_bodies..].iter() {
             body.render(pan_x, pan_y, zoom, &mut canvas);
@@ -426,45 +423,62 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // sim steps per render
         for _ in 0..sim_steps {
+            let total_bodies = bodies.len();
+
+            // Before pinning
+            for body in &mut bodies.iter_mut() {
+                body.x += body.v_x;
+                body.y += body.v_y;
+            }
+
             for i in total_bodies - significant_bodies..total_bodies {
                 let body2 = bodies[i];
 
                 bodies[..total_bodies - significant_bodies]
                     .par_iter_mut()
                     .for_each(|body| {
-                        if !body.pinned {
-                            let delta_y = body2.y - body.y;
-                            let delta_x = body2.x - body.x;
-                            let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
-                            // f = m1m2/r^2
+                        let delta_y = body2.y - body.y;
+                        let delta_x = body2.x - body.x;
+                        let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
+                        // f = m1m2/r^2
 
-                            // These are usually both sqrt so it works, collision
-                            if dist_sq < body2.mass {
-                                body.color = body2.color;
-                                body.pinned = true;
-                                body.x = body.init_x;
-                                body.y = body.init_y;
-                                body.v_x = 0.0;
-                                body.v_y = 0.0;
-                            }
-
-                            let force = body2.mass / dist_sq.max(0.0001);
-
-                            let angle = f64::atan2(delta_y, delta_x);
-
-                            body.v_x += force * angle.cos();
-                            body.v_y += force * angle.sin();
+                        // These are usually both sqrt so it works, collision
+                        if dist_sq < body2.mass {
+                            body.color = body2.color;
+                            body.pinned = true;
+                            body.x = body.init_x;
+                            body.y = body.init_y;
+                            body.v_x = 0.0;
+                            body.v_y = 0.0;
                         }
+
+                        let force = body2.mass / (dist_sq + 0.00000001);
+
+                        let angle = f64::atan2(delta_y, delta_x);
+
+                        body.v_x += force * angle.cos();
+                        body.v_y += force * angle.sin();
                     });
             }
 
-            for body in &mut bodies {
-                if body.pinned {
-                    continue;
-                }
-                body.x += body.v_x;
-                body.y += body.v_y;
-            }
+            let mut significant_bodies_vec = bodies[total_bodies - significant_bodies..]
+                .iter()
+                .map(|&body| body)
+                .collect::<Vec<Body>>();
+
+            bodies = bodies[..total_bodies - significant_bodies]
+                .iter()
+                .filter_map(|&body| {
+                    if body.pinned {
+                        pinned_bodies.push(body.clone());
+                        None
+                    } else {
+                        Some(body)
+                    }
+                })
+                .collect::<Vec<Body>>();
+
+            bodies.append(&mut significant_bodies_vec);
         }
     }
 
