@@ -3,9 +3,10 @@ use sdl3::keyboard::Keycode;
 use sdl3::mouse::MouseButton;
 use sdl3::pixels::{Color, FColor};
 use sdl3::rect::Point;
-use sdl3::render::{FPoint, Vertex};
+use sdl3::render::{Canvas, FPoint, Vertex};
 
 use rayon::prelude::*;
+use sdl3::video::Window;
 
 // "Borrowed"
 fn generate_circle_fan(
@@ -120,6 +121,20 @@ impl Body {
 
         return (vertices, indices);
     }
+
+    fn render(&self, pan_x: f32, pan_y: f32, zoom: f32, canvas: &mut Canvas<Window>) {
+        let (vertices, indices) = generate_circle_fan(
+            FPoint::new(
+                (self.x as f32 * zoom) + pan_x,
+                (self.y as f32 * zoom) + pan_y,
+            ), // center
+            self.mass.abs().sqrt() as f32 * zoom.max(0.1), // radius
+            30,                                            // segments
+            self.color,                                    // color
+        );
+
+        canvas.render_geometry(&vertices, None, &indices).unwrap();
+    }
 }
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -153,8 +168,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut render_mode = 0;
 
-    let res = 0.25;
-    let size = (1200 as f64 * res) as i32;
+    let res = 3.0;
+    let size = (500 as f64 * res) as i32;
     for x in -size..size {
         for y in -size / 2..size / 2 {
             bodies.push(Body::new(
@@ -162,7 +177,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 (y as f64 / res).into(),
                 0.0,
                 0.0,
-                1.0,
+                100.0,
                 false,
                 FColor::WHITE,
             ));
@@ -179,8 +194,24 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         FColor::YELLOW,
     ));
     bodies.push(Body::new(100.6, 50.6, 0.0, 0.0, 1000.0, true, FColor::BLUE));
-    bodies.push(Body::new(-100.6, 50.6, 0.0, 0.0, 1000.0, true, FColor::RED));
-    bodies.push(Body::new(-300.6, 50.6, 0.0, 0.0, 100.0, true, FColor::GREY));
+    bodies.push(Body::new(
+        -100.6,
+        150.6,
+        0.0,
+        0.0,
+        1000.0,
+        true,
+        FColor::RED,
+    ));
+    bodies.push(Body::new(
+        -300.6,
+        50.6,
+        0.0,
+        0.0,
+        1400.0,
+        true,
+        FColor::GREY,
+    ));
 
     let significant_bodies = 4;
 
@@ -336,6 +367,12 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         canvas.render_geometry(&vertices, None, &indices).unwrap();
 
+        let total_bodies = bodies.len();
+
+        for body in bodies[total_bodies - significant_bodies..].iter() {
+            body.render(pan_x, pan_y, zoom, &mut canvas);
+        }
+
         canvas.present();
 
         // ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
@@ -345,8 +382,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         if render_mode == 2 {
             sim_steps = 20;
         }
-
-        let total_bodies = bodies.len();
 
         // sim steps per render
         for _ in 0..sim_steps {
