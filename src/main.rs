@@ -9,9 +9,6 @@ use sdl3::rect::Point;
 use sdl3::render::{Canvas, FPoint, Vertex};
 use sdl3::sys::mouse::SDL_GetMouseState;
 use sdl3::video::Window;
-use std::any::Any;
-use std::fmt::Debug;
-use std::time::Duration;
 
 // "Borrowed"
 fn generate_circle_fan(
@@ -63,10 +60,11 @@ struct Body {
     v_y: f64,
     mass: f64,
     pinned: bool,
+    color: FColor,
 }
 
 impl Body {
-    pub fn new(x: f64, y: f64, v_x: f64, v_y: f64, mass: f64, pinned: bool) -> Self {
+    pub fn new(x: f64, y: f64, v_x: f64, v_y: f64, mass: f64, pinned: bool, color: FColor) -> Self {
         Body {
             x,
             y,
@@ -74,27 +72,63 @@ impl Body {
             v_y,
             mass,
             pinned,
+            color,
         }
     }
 
-    pub fn render(&self, canvas: &mut Canvas<Window>, pan_x: f32, pan_y: f32, zoom: f32) {
-        let color: FColor = {
-            if self.mass > 0.0 {
-                FColor::RED
-            } else {
-                FColor::BLUE
-            }
-        };
+    pub fn get_render(
+        &self,
+        canvas: &mut Canvas<Window>,
+        pan_x: f32,
+        pan_y: f32,
+        zoom: f32,
+    ) -> (Vec<Vertex>, Vec<i32>) {
+        if self.color == FColor::BLACK {
+            return (vec![], vec![]);
+        }
 
-        let (vertices, indices) = generate_circle_fan(
+        let (mut vertices, mut indices) = generate_circle_fan(
             FPoint::new(
                 (self.x as f32 * zoom) + pan_x,
                 (self.y as f32 * zoom) + pan_y,
             ), // center
             self.mass.abs().sqrt() as f32 * zoom.max(0.1), // radius
-            500,                                           // segments
-            color,                                         // color
+            3,                                             // segments
+            self.color,                                    // color
         );
+
+        return (vertices, indices);
+    }
+
+    pub fn render(&self, canvas: &mut Canvas<Window>, pan_x: f32, pan_y: f32, zoom: f32) {
+        if self.color == FColor::BLACK {
+            return;
+        }
+
+        let (mut vertices, mut indices) = generate_circle_fan(
+            FPoint::new(
+                (self.x as f32 * zoom) + pan_x,
+                (self.y as f32 * zoom) + pan_y,
+            ), // center
+            self.mass.abs().sqrt() as f32 * zoom.max(0.1), // radius
+            3,                                             // segments
+            self.color,                                    // color
+        );
+
+        vertices.append(
+            &mut generate_circle_fan(
+                FPoint::new(
+                    (self.x as f32 * zoom) + pan_x + 1000.0,
+                    (self.y as f32 * zoom) + pan_y,
+                ), // center
+                self.mass.abs().sqrt() as f32 * zoom.max(0.1), // radius
+                3,                                             // segments
+                FColor::GREY,                                  // color
+            )
+            .0,
+        );
+
+        indices.append(&mut indices.clone().iter().map(|i| i + 5).collect());
 
         canvas.render_geometry(&vertices, None, &indices).unwrap();
     }
@@ -131,9 +165,40 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // for i in 0..3 {}
 
-    bodies.push(Body::new(660.6, 300.6, 0.0, 0.0, 1000.0, true));
-    bodies.push(Body::new(100.6, 300.6, 0.0, 0.0, -1000.0, true));
+    bodies.push(Body::new(
+        660.6,
+        300.6,
+        0.0,
+        0.0,
+        1000.0,
+        true,
+        FColor::YELLOW,
+    ));
+    bodies.push(Body::new(
+        100.6,
+        300.6,
+        0.0,
+        0.0,
+        1000.0,
+        true,
+        FColor::BLUE,
+    ));
 
+    // for x in 0..800 {
+    //     for y in 0..600 {
+    //         bodies.push(Body::new(
+    //             x.into(),
+    //             y.into(),
+    //             0.0,
+    //             0.0,
+    //             100.0,
+    //             false,
+    //             FColor::WHITE,
+    //         ));
+    //     }
+    // }
+
+    bodies.push(Body::new(400.6, 600.6, 0.0, 0.0, 1000.0, true, FColor::RED));
     'running: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -145,10 +210,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 Event::MouseButtonDown {
                     mouse_btn,
-                    timestamp,
-                    window_id,
-                    which,
-                    clicks,
+                    timestamp: _,
+                    window_id: _,
+                    which: _,
+                    clicks: _,
                     x,
                     y,
                 } => {
@@ -157,31 +222,25 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if mouse_btn == MouseButton::Left || mouse_btn == MouseButton::Right {
-                        let mass_mul = {
-                            if mouse_btn == MouseButton::Right {
-                                -1.0
-                            } else {
-                                1.0
-                            }
-                        };
                         bodies.push(Body::new(
                             ((x - pan_x) / zoom).into(),
                             ((y - pan_y) / zoom).into(),
                             0.0,
                             0.0,
-                            100.0 * mass_mul,
+                            100.0,
                             false,
+                            FColor::WHITE,
                         ));
                     }
                 }
 
                 Event::MouseMotion {
-                    timestamp,
-                    window_id,
-                    which,
-                    mousestate,
-                    x,
-                    y,
+                    timestamp: _,
+                    window_id: _,
+                    which: _,
+                    mousestate: _,
+                    x: _,
+                    y: _,
                     xrel,
                     yrel,
                 } => {
@@ -198,12 +257,12 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
 
                 Event::MouseWheel {
-                    timestamp,
-                    window_id,
-                    which,
-                    x,
+                    timestamp: _,
+                    window_id: _,
+                    which: _,
+                    x: _,
                     y,
-                    direction,
+                    direction: _,
                     mouse_x,
                     mouse_y,
                 } => {
@@ -230,11 +289,15 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         canvas.present();
 
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
+        // ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
         // The rest of the game loop goes here...
 
         for body2 in bodies.clone() {
-            for mut body in &mut bodies {
+            if body2.color == FColor::WHITE || body2.color == FColor::BLACK {
+                continue;
+            }
+
+            for body in &mut bodies {
                 if body.pinned {
                     continue;
                 }
@@ -246,11 +309,12 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let dist_sq = (body.x - body2.x).powi(2) + (body.y - body2.y).powi(2);
                 // f = m1m2/r^2
 
-                let mut force = -body2.mass.abs() / dist_sq;
-
-                if body.mass.signum() != body2.mass.signum() {
-                    force *= -1.0;
+                // These are usually both sqrt so it works, collision
+                if dist_sq < body2.mass {
+                    body.color = FColor::BLACK;
                 }
+
+                let force = body2.mass.abs() / dist_sq;
 
                 let angle = f64::atan2(body2.y - body.y, body2.x - body.x);
 
@@ -259,7 +323,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        for mut body in &mut bodies {
+        for body in &mut bodies {
             body.x += body.v_x;
             body.y += body.v_y;
         }
