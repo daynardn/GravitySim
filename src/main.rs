@@ -202,6 +202,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut bodies: Vec<Body> = vec![];
 
     let mut panning = false;
+    let mut drawing = false;
     let mut pan_x = 0.0;
     let mut pan_y = 0.0;
 
@@ -317,13 +318,33 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if mouse_btn == MouseButton::Left || mouse_btn == MouseButton::Right {
+                        drawing = true;
+                    }
+                }
+
+                Event::MouseMotion {
+                    timestamp: _,
+                    window_id: _,
+                    which: _,
+                    mousestate: _,
+                    x,
+                    y,
+                    xrel,
+                    yrel,
+                } => {
+                    if panning {
+                        pan_x += xrel;
+                        pan_y += yrel;
+                    }
+
+                    if drawing {
                         for box_x in -10..10 {
                             for box_y in -10..10 {
                                 bodies.insert(
                                     0,
                                     Body::new(
-                                        (((x - pan_x) / zoom) + box_x as f32 / zoom).into(),
-                                        (((y - pan_y) / zoom) + box_y as f32 / zoom).into(),
+                                        (((x - pan_x) / zoom) + box_x as f32 / (zoom / 9.0)).into(),
+                                        (((y - pan_y) / zoom) + box_y as f32 / (zoom / 9.0)).into(),
                                         0.0,
                                         0.0,
                                         100.0,
@@ -336,25 +357,13 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
-                Event::MouseMotion {
-                    timestamp: _,
-                    window_id: _,
-                    which: _,
-                    mousestate: _,
-                    x: _,
-                    y: _,
-                    xrel,
-                    yrel,
-                } => {
-                    if panning {
-                        pan_x += xrel;
-                        pan_y += yrel;
-                    }
-                }
-
                 Event::MouseButtonUp { mouse_btn, .. } => {
                     if mouse_btn == MouseButton::Middle {
                         panning = false;
+                    }
+
+                    if mouse_btn == MouseButton::Left || mouse_btn == MouseButton::Right {
+                        drawing = false;
                     }
                 }
 
