@@ -235,19 +235,19 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         FColor::YELLOW,
     ));
-    bodies.push(Body::new(100.6, 50.6, 0.0, 0.0, 1000.0, true, FColor::BLUE));
     bodies.push(Body::new(
         -100.6,
-        150.6,
+        50.6,
         0.0,
         0.0,
         1000.0,
         true,
-        FColor::RED,
+        FColor::BLUE,
     ));
+    bodies.push(Body::new(100.6, 150.6, 0.0, 0.0, 1000.0, true, FColor::RED));
     bodies.push(Body::new(
         -300.6,
-        50.6,
+        100.6,
         0.0,
         0.0,
         1400.0,
@@ -280,7 +280,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } => {
                     if keycode == Some(Keycode::Space) {
                         render_mode += 1;
-                        if render_mode > 2 {
+                        if render_mode > 3 {
                             render_mode = 0;
                         }
                     }
@@ -430,15 +430,23 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             body.render(pan_x, pan_y, zoom, &mut canvas);
         }
 
+        canvas.set_draw_color(Color::RGB(255, 255, 255));
+        let _ = canvas.draw_debug_text(render_mode.to_string().as_str(), Point::new(100, 0));
+
         canvas.present();
 
         // ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
 
         let mut sim_steps = 1;
+        let res = 10;
 
         if render_mode == 2 {
             sim_steps = 20;
+        } else if render_mode == 3 {
+            sim_steps = 500;
         }
+
+        sim_steps *= res;
 
         // sim steps per render
         for _ in 0..sim_steps {
@@ -446,8 +454,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Before pinning
             for body in &mut bodies.iter_mut() {
-                body.x += body.v_x;
-                body.y += body.v_y;
+                body.x += body.v_x / res as f64;
+                body.y += body.v_y / res as f64;
+                body.v_x *= 0.999999;
+                body.v_y *= 0.999999;
             }
 
             for i in total_bodies - significant_bodies..total_bodies {
@@ -471,7 +481,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                             body.v_y = 0.0;
                         }
 
-                        let force = body2.mass / (dist_sq + 0.00000001);
+                        let force = body2.mass / (dist_sq * res as f64 + 0.00000001);
 
                         let angle = f64::atan2(delta_y, delta_x);
 
