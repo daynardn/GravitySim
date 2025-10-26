@@ -210,7 +210,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut render_mode = 0;
 
     let res = 1.0;
-    let size = (1500 as f64 * res) as i32;
+    let size = (700 as f64 * res) as i32;
     for x in -size..size {
         for y in -size / 2..size / 2 {
             bodies.push(Body::new(
@@ -432,8 +432,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 bodies[..total_bodies - significant_bodies]
                     .par_iter_mut()
                     .for_each(|body| {
-                        if !body.pinned && body.x != body2.x && body.y != body2.y {
-                            let dist_sq = (body.x - body2.x).powi(2) + (body.y - body2.y).powi(2);
+                        if !body.pinned {
+                            let delta_y = body2.y - body.y;
+                            let delta_x = body2.x - body.x;
+                            let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
                             // f = m1m2/r^2
 
                             // These are usually both sqrt so it works, collision
@@ -446,9 +448,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 body.v_y = 0.0;
                             }
 
-                            let force = body2.mass / dist_sq;
+                            let force = body2.mass / dist_sq.max(0.0001);
 
-                            let angle = f64::atan2(body2.y - body.y, body2.x - body.x);
+                            let angle = f64::atan2(delta_y, delta_x);
 
                             body.v_x += force * angle.cos();
                             body.v_y += force * angle.sin();
