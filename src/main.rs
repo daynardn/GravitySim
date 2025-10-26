@@ -209,8 +209,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut render_mode = 0;
 
-    let res = 3.0;
-    let size = (50 as f64 * res) as i32;
+    let res = 1.0;
+    let size = (1500 as f64 * res) as i32;
     for x in -size..size {
         for y in -size / 2..size / 2 {
             bodies.push(Body::new(
