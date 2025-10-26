@@ -209,8 +209,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut render_mode = 0;
 
-    let res = 1.0;
-    let size = (700 as f64 * res) as i32;
+    let res = 0.1;
+    let size = (600 as f64 * res) as i32;
     for x in -size..size {
         for y in -size / 2..size / 2 {
             bodies.push(Body::new(
@@ -285,11 +285,21 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if keycode == Some(Keycode::R) {
-                        let body_len = bodies.len();
-                        for body in pinned_bodies[..body_len - significant_bodies].iter_mut() {
+                        let total_bodies = bodies.len();
+                        let mut significant_bodies_vec = bodies
+                            [total_bodies - significant_bodies..]
+                            .iter()
+                            .map(|&body| body)
+                            .collect::<Vec<Body>>();
+
+                        for body in pinned_bodies.iter_mut() {
                             body.pinned = false;
+                            body.v_x = 0.0;
+                            body.v_y = 0.0;
                             bodies.push(body.clone());
                         }
+
+                        bodies.append(&mut significant_bodies_vec);
                     }
                 }
 
