@@ -1,14 +1,9 @@
 use sdl3::event::Event;
 use sdl3::keyboard::Keycode;
-use sdl3::mouse::Cursor;
 use sdl3::mouse::MouseButton;
-use sdl3::mouse::MouseState;
-use sdl3::mouse::MouseWheelDirection;
 use sdl3::pixels::{Color, FColor};
 use sdl3::rect::Point;
-use sdl3::render::{Canvas, FPoint, Vertex};
-use sdl3::sys::mouse::SDL_GetMouseState;
-use sdl3::video::Window;
+use sdl3::render::{FPoint, Vertex};
 
 use rayon::prelude::*;
 
@@ -158,14 +153,13 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut render_mode = 0;
 
-    // for i in 0..3 {}
-
-    let size = 600;
+    let res = 1.0;
+    let size = (300 as f64 * res) as i32;
     for x in -size..size {
         for y in -size / 2..size / 2 {
             bodies.push(Body::new(
-                x.into(),
-                y.into(),
+                (x as f64 / res).into(),
+                (y as f64 / res).into(),
                 0.0,
                 0.0,
                 1.0,
@@ -197,14 +191,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } => break 'running,
 
                 Event::KeyDown {
-                    timestamp,
-                    window_id,
+                    timestamp: _,
+                    window_id: _,
                     keycode,
-                    scancode,
-                    keymod,
-                    repeat,
-                    which,
-                    raw,
+                    scancode: _,
+                    keymod: _,
+                    repeat: _,
+                    which: _,
+                    raw: _,
                 } => {
                     if keycode == Some(Keycode::Space) {
                         render_mode += 1;
@@ -228,15 +222,18 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if mouse_btn == MouseButton::Left || mouse_btn == MouseButton::Right {
-                        bodies.push(Body::new(
-                            ((x - pan_x) / zoom).into(),
-                            ((y - pan_y) / zoom).into(),
-                            0.0,
-                            0.0,
-                            100.0,
-                            false,
-                            FColor::WHITE,
-                        ));
+                        bodies.insert(
+                            0,
+                            Body::new(
+                                ((x - pan_x) / zoom).into(),
+                                ((y - pan_y) / zoom).into(),
+                                0.0,
+                                0.0,
+                                100.0,
+                                false,
+                                FColor::WHITE,
+                            ),
+                        );
                     }
                 }
 
@@ -295,6 +292,13 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         for body in &bodies {
             if body.pinned && render_mode != 0 {
+                continue;
+            } else if body.pinned {
+                canvas.set_draw_color(body.color);
+                canvas.draw_point(Point::new(
+                    ((body.x as f32 * zoom) + pan_x) as i32,
+                    ((body.y as f32 * zoom) + pan_y) as i32,
+                ))?;
                 continue;
             }
 
