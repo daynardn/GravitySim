@@ -153,8 +153,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut render_mode = 0;
 
-    let res = 1.0;
-    let size = (300 as f64 * res) as i32;
+    let res = 0.25;
+    let size = (1200 as f64 * res) as i32;
     for x in -size..size {
         for y in -size / 2..size / 2 {
             bodies.push(Body::new(
@@ -180,6 +180,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     bodies.push(Body::new(100.6, 50.6, 0.0, 0.0, 1000.0, true, FColor::BLUE));
     bodies.push(Body::new(-100.6, 50.6, 0.0, 0.0, 1000.0, true, FColor::RED));
+    bodies.push(Body::new(-300.6, 50.6, 0.0, 0.0, 100.0, true, FColor::GREY));
+
+    let significant_bodies = 4;
 
     'running: loop {
         for event in event_pump.poll_iter() {
@@ -206,6 +209,13 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                             render_mode = 0;
                         }
                     }
+
+                    if keycode == Some(Keycode::R) {
+                        let body_len = bodies.len();
+                        for body in bodies[..body_len - significant_bodies].iter_mut() {
+                            body.pinned = false;
+                        }
+                    }
                 }
 
                 Event::MouseButtonDown {
@@ -222,18 +232,22 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if mouse_btn == MouseButton::Left || mouse_btn == MouseButton::Right {
-                        bodies.insert(
-                            0,
-                            Body::new(
-                                ((x - pan_x) / zoom).into(),
-                                ((y - pan_y) / zoom).into(),
-                                0.0,
-                                0.0,
-                                100.0,
-                                false,
-                                FColor::WHITE,
-                            ),
-                        );
+                        for box_x in -10..10 {
+                            for box_y in -10..10 {
+                                bodies.insert(
+                                    0,
+                                    Body::new(
+                                        (((x - pan_x) / zoom) + box_x as f32 / zoom).into(),
+                                        (((y - pan_y) / zoom) + box_y as f32 / zoom).into(),
+                                        0.0,
+                                        0.0,
+                                        100.0,
+                                        false,
+                                        FColor::WHITE,
+                                    ),
+                                );
+                            }
+                        }
                     }
                 }
 
@@ -336,30 +350,34 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // sim steps per render
         for _ in 0..sim_steps {
-            for i in total_bodies - 3..total_bodies {
+            for i in total_bodies - significant_bodies..total_bodies {
                 let body2 = bodies[i];
 
-                bodies[..total_bodies - 3].par_iter_mut().for_each(|body| {
-                    if !body.pinned && body.x != body2.x && body.y != body2.y {
-                        let dist_sq = (body.x - body2.x).powi(2) + (body.y - body2.y).powi(2);
-                        // f = m1m2/r^2
+                bodies[..total_bodies - significant_bodies]
+                    .par_iter_mut()
+                    .for_each(|body| {
+                        if !body.pinned && body.x != body2.x && body.y != body2.y {
+                            let dist_sq = (body.x - body2.x).powi(2) + (body.y - body2.y).powi(2);
+                            // f = m1m2/r^2
 
-                        // These are usually both sqrt so it works, collision
-                        if dist_sq < body2.mass {
-                            body.color = body2.color;
-                            body.pinned = true;
-                            body.x = body.init_x;
-                            body.y = body.init_y;
+                            // These are usually both sqrt so it works, collision
+                            if dist_sq < body2.mass {
+                                body.color = body2.color;
+                                body.pinned = true;
+                                body.x = body.init_x;
+                                body.y = body.init_y;
+                                body.v_x = 0.0;
+                                body.v_y = 0.0;
+                            }
+
+                            let force = body2.mass / dist_sq;
+
+                            let angle = f64::atan2(body2.y - body.y, body2.x - body.x);
+
+                            body.v_x += force * angle.cos();
+                            body.v_y += force * angle.sin();
                         }
-
-                        let force = body2.mass.abs() / dist_sq;
-
-                        let angle = f64::atan2(body2.y - body.y, body2.x - body.x);
-
-                        body.v_x += force * angle.cos();
-                        body.v_y += force * angle.sin();
-                    }
-                });
+                    });
             }
 
             for body in &mut bodies {
