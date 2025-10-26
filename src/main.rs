@@ -325,47 +325,46 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut sim_steps = 1;
 
         if render_mode == 2 {
-            sim_steps = 5;
+            sim_steps = 20;
         }
+
+        let total_bodies = bodies.len();
 
         // sim steps per render
         for _ in 0..sim_steps {
-            bodies.clone().into_iter().for_each(|body2| {
-                if body2.color != FColor::WHITE
-                    && body2.color != FColor::BLACK
-                    && body2.mass >= 999.0
-                {
-                    bodies.par_iter_mut().for_each(|body| {
-                        if !body.pinned && body.x != body2.x && body.y != body2.y {
-                            let dist_sq = (body.x - body2.x).powi(2) + (body.y - body2.y).powi(2);
-                            // f = m1m2/r^2
+            for i in total_bodies - 3..total_bodies {
+                let body2 = bodies[i];
 
-                            // These are usually both sqrt so it works, collision
-                            if dist_sq < body2.mass {
-                                body.color = body2.color;
-                                body.pinned = true;
-                                body.x = body.init_x;
-                                body.y = body.init_y;
-                            }
+                bodies[..total_bodies - 3].par_iter_mut().for_each(|body| {
+                    if !body.pinned && body.x != body2.x && body.y != body2.y {
+                        let dist_sq = (body.x - body2.x).powi(2) + (body.y - body2.y).powi(2);
+                        // f = m1m2/r^2
 
-                            let force = body2.mass.abs() / dist_sq;
-
-                            let angle = f64::atan2(body2.y - body.y, body2.x - body.x);
-
-                            body.v_x += force * angle.cos();
-                            body.v_y += force * angle.sin();
+                        // These are usually both sqrt so it works, collision
+                        if dist_sq < body2.mass {
+                            body.color = body2.color;
+                            body.pinned = true;
+                            body.x = body.init_x;
+                            body.y = body.init_y;
                         }
-                    });
-                }
-            });
-        }
 
-        for body in &mut bodies {
-            if body.pinned {
-                continue;
+                        let force = body2.mass.abs() / dist_sq;
+
+                        let angle = f64::atan2(body2.y - body.y, body2.x - body.x);
+
+                        body.v_x += force * angle.cos();
+                        body.v_y += force * angle.sin();
+                    }
+                });
             }
-            body.x += body.v_x;
-            body.y += body.v_y;
+
+            for body in &mut bodies {
+                if body.pinned {
+                    continue;
+                }
+                body.x += body.v_x;
+                body.y += body.v_y;
+            }
         }
     }
 
