@@ -10,6 +10,8 @@ use sdl3::render::{Canvas, FPoint, Vertex};
 use sdl3::sys::mouse::SDL_GetMouseState;
 use sdl3::video::Window;
 
+use rayon::prelude::*;
+
 // "Borrowed"
 fn generate_circle_fan(
     center: FPoint,
@@ -154,12 +156,13 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut zoom = 1.0;
 
-    let mut dont_render_pinned = false;
+    let mut render_mode = 0;
 
     // for i in 0..3 {}
 
-    for x in 0..800 {
-        for y in 0..600 {
+    let size = 600;
+    for x in -size..size {
+        for y in -size / 2..size / 2 {
             bodies.push(Body::new(
                 x.into(),
                 y.into(),
@@ -173,24 +176,16 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     bodies.push(Body::new(
-        660.6,
-        300.6,
+        0.0,
+        -50.0,
         0.0,
         0.0,
         1000.0,
         true,
         FColor::YELLOW,
     ));
-    bodies.push(Body::new(
-        100.6,
-        300.6,
-        0.0,
-        0.0,
-        1000.0,
-        true,
-        FColor::BLUE,
-    ));
-    bodies.push(Body::new(400.6, 600.6, 0.0, 0.0, 1000.0, true, FColor::RED));
+    bodies.push(Body::new(100.6, 50.6, 0.0, 0.0, 1000.0, true, FColor::BLUE));
+    bodies.push(Body::new(-100.6, 50.6, 0.0, 0.0, 1000.0, true, FColor::RED));
 
     'running: loop {
         for event in event_pump.poll_iter() {
@@ -212,7 +207,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     raw,
                 } => {
                     if keycode == Some(Keycode::Space) {
-                        dont_render_pinned = !dont_render_pinned;
+                        render_mode += 1;
+                        if render_mode > 2 {
+                            render_mode = 0;
+                        }
                     }
                 }
 
@@ -296,7 +294,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut bodies_rendered = 0;
 
         for body in &bodies {
-            if body.pinned && dont_render_pinned {
+            if body.pinned && render_mode != 0 {
                 continue;
             }
 
@@ -324,38 +322,42 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
 
-        for body2 in bodies.clone() {
-            if body2.color == FColor::WHITE || body2.color == FColor::BLACK || body2.mass < 999.0 {
-                continue;
-            }
+        let mut sim_steps = 1;
 
-            for body in &mut bodies {
-                if body.pinned {
-                    continue;
+        if render_mode == 2 {
+            sim_steps = 5;
+        }
+
+        // sim steps per render
+        for _ in 0..sim_steps {
+            bodies.clone().into_iter().for_each(|body2| {
+                if body2.color != FColor::WHITE
+                    && body2.color != FColor::BLACK
+                    && body2.mass >= 999.0
+                {
+                    bodies.par_iter_mut().for_each(|body| {
+                        if !body.pinned && body.x != body2.x && body.y != body2.y {
+                            let dist_sq = (body.x - body2.x).powi(2) + (body.y - body2.y).powi(2);
+                            // f = m1m2/r^2
+
+                            // These are usually both sqrt so it works, collision
+                            if dist_sq < body2.mass {
+                                body.color = body2.color;
+                                body.pinned = true;
+                                body.x = body.init_x;
+                                body.y = body.init_y;
+                            }
+
+                            let force = body2.mass.abs() / dist_sq;
+
+                            let angle = f64::atan2(body2.y - body.y, body2.x - body.x);
+
+                            body.v_x += force * angle.cos();
+                            body.v_y += force * angle.sin();
+                        }
+                    });
                 }
-
-                if body.x == body2.x && body.y == body2.y {
-                    continue;
-                }
-
-                let dist_sq = (body.x - body2.x).powi(2) + (body.y - body2.y).powi(2);
-                // f = m1m2/r^2
-
-                // These are usually both sqrt so it works, collision
-                if dist_sq < body2.mass {
-                    body.color = body2.color;
-                    body.pinned = true;
-                    body.x = body.init_x;
-                    body.y = body.init_y;
-                }
-
-                let force = body2.mass.abs() / dist_sq;
-
-                let angle = f64::atan2(body2.y - body.y, body2.x - body.x);
-
-                body.v_x += force * angle.cos();
-                body.v_y += force * angle.sin();
-            }
+            });
         }
 
         for body in &mut bodies {
