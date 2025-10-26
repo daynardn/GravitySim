@@ -178,6 +178,30 @@ impl Body {
     }
 }
 
+fn apply_force(body: &mut Body, body2: Body, res: i32) {
+    let delta_y = body2.y - body.y;
+    let delta_x = body2.x - body.x;
+    let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
+    // f = m1m2/r^2
+
+    // These are usually both sqrt so it works, collision
+    if dist_sq < body2.mass {
+        body.color = body2.color;
+        body.pinned = true;
+        body.x = body.init_x;
+        body.y = body.init_y;
+        body.v_x = 0.0;
+        body.v_y = 0.0;
+    }
+
+    let force = body2.mass / (dist_sq * res as f64 + 0.00000001);
+
+    let angle = f64::atan2(delta_y, delta_x);
+
+    body.v_x += force * angle.cos();
+    body.v_y += force * angle.sin();
+}
+
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdl_context = sdl3::init()?;
     let video_subsystem = sdl_context.video()?;
@@ -204,6 +228,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut panning = false;
     let mut drawing = false;
+    let mut paused = false;
     let mut pan_x = 0.0;
     let mut pan_y = 0.0;
 
@@ -258,6 +283,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut pinned_bodies: Vec<Body> = vec![];
 
+    let mut sim_steps = 1;
+    let res = 1;
+
     'running: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -277,11 +305,29 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     which: _,
                     raw: _,
                 } => {
-                    if keycode == Some(Keycode::Space) {
+                    let max_keycode = 3;
+                    if keycode == Some(Keycode::Left) {
+                        render_mode -= 1;
+                        if render_mode < 0 {
+                            render_mode = max_keycode;
+                        }
+                    }
+
+                    if keycode == Some(Keycode::Right) {
                         render_mode += 1;
-                        if render_mode > 3 {
+                        if render_mode > max_keycode {
                             render_mode = 0;
                         }
+                    }
+
+                    if render_mode == 2 {
+                        sim_steps = 20;
+                    } else if render_mode == 3 {
+                        sim_steps = 500;
+                    }
+
+                    if keycode == Some(Keycode::Space) {
+                        paused = !paused;
                     }
 
                     if keycode == Some(Keycode::R) {
@@ -381,8 +427,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         canvas.clear();
         canvas.set_draw_color(Color::RGB(255, 255, 255));
 
-        let total_bodies = bodies.len();
-
         let (mut vertices, mut indices) = (vec![], vec![]);
 
         let mut bodies_rendered = 0;
@@ -420,23 +464,18 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         canvas.set_draw_color(Color::RGB(255, 255, 255));
         let _ = canvas.draw_debug_text(render_mode.to_string().as_str(), Point::new(100, 0));
 
+        if paused {
+            let _ = canvas.draw_debug_text("||", Point::new(80, 0));
+        } else {
+            let _ = canvas.draw_debug_text(">", Point::new(80, 0));
+        }
+
         canvas.present();
 
         // ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
 
-        let mut sim_steps = 1;
-        let res = 10;
-
-        if render_mode == 2 {
-            sim_steps = 20;
-        } else if render_mode == 3 {
-            sim_steps = 500;
-        }
-
-        sim_steps *= res;
-
         // sim steps per render
-        for _ in 0..sim_steps {
+        for _ in 0..sim_steps * res * (!paused as i32) {
             // Before pinning
             for body in &mut bodies.iter_mut() {
                 body.x += body.v_x / res as f64;
@@ -447,27 +486,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             for body2 in &significant_bodies {
                 bodies.par_iter_mut().for_each(|body| {
-                    let delta_y = body2.y - body.y;
-                    let delta_x = body2.x - body.x;
-                    let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
-                    // f = m1m2/r^2
-
-                    // These are usually both sqrt so it works, collision
-                    if dist_sq < body2.mass {
-                        body.color = body2.color;
-                        body.pinned = true;
-                        body.x = body.init_x;
-                        body.y = body.init_y;
-                        body.v_x = 0.0;
-                        body.v_y = 0.0;
-                    }
-
-                    let force = body2.mass / (dist_sq * res as f64 + 0.00000001);
-
-                    let angle = f64::atan2(delta_y, delta_x);
-
-                    body.v_x += force * angle.cos();
-                    body.v_y += force * angle.sin();
+                    apply_force(body, *body2, res);
                 });
             }
 
