@@ -200,6 +200,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut event_pump = sdl_context.event_pump()?;
 
     let mut bodies: Vec<Body> = vec![];
+    let mut significant_bodies: Vec<Body> = vec![];
 
     let mut panning = false;
     let mut drawing = false;
@@ -226,7 +227,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    bodies.push(Body::new(
+    significant_bodies.push(Body::new(
         0.0,
         -50.0,
         0.0,
@@ -235,7 +236,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         FColor::YELLOW,
     ));
-    bodies.push(Body::new(
+    significant_bodies.push(Body::new(
         -100.6,
         50.6,
         0.0,
@@ -244,8 +245,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         FColor::BLUE,
     ));
-    bodies.push(Body::new(100.6, 150.6, 0.0, 0.0, 1000.0, true, FColor::RED));
-    bodies.push(Body::new(
+    significant_bodies.push(Body::new(100.6, 150.6, 0.0, 0.0, 1000.0, true, FColor::RED));
+    significant_bodies.push(Body::new(
         -300.6,
         100.6,
         0.0,
@@ -254,8 +255,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         FColor::GREY,
     ));
-
-    let significant_bodies = 4;
 
     let mut pinned_bodies: Vec<Body> = vec![];
 
@@ -286,21 +285,12 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     if keycode == Some(Keycode::R) {
-                        let total_bodies = bodies.len();
-                        let mut significant_bodies_vec = bodies
-                            [total_bodies - significant_bodies..]
-                            .iter()
-                            .map(|&body| body)
-                            .collect::<Vec<Body>>();
-
                         for body in pinned_bodies.iter_mut() {
                             body.pinned = false;
                             body.v_x = 0.0;
                             body.v_y = 0.0;
                             bodies.push(body.clone());
                         }
-
-                        bodies.append(&mut significant_bodies_vec);
                     }
                 }
 
@@ -340,18 +330,15 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if drawing {
                         for box_x in -10..10 {
                             for box_y in -10..10 {
-                                bodies.insert(
-                                    0,
-                                    Body::new(
-                                        (((x - pan_x) / zoom) + box_x as f32 / (zoom / 9.0)).into(),
-                                        (((y - pan_y) / zoom) + box_y as f32 / (zoom / 9.0)).into(),
-                                        0.0,
-                                        0.0,
-                                        100.0,
-                                        false,
-                                        FColor::WHITE,
-                                    ),
-                                );
+                                bodies.push(Body::new(
+                                    (((x - pan_x) / zoom) + box_x as f32 / (zoom / 9.0)).into(),
+                                    (((y - pan_y) / zoom) + box_y as f32 / (zoom / 9.0)).into(),
+                                    0.0,
+                                    0.0,
+                                    100.0,
+                                    false,
+                                    FColor::WHITE,
+                                ));
                             }
                         }
                     }
@@ -400,7 +387,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mut bodies_rendered = 0;
 
-        for body in &bodies[..total_bodies - significant_bodies] {
+        for body in &bodies {
             let (mut body_vertices, body_indices) = body.get_render(pan_x, pan_y, zoom);
             vertices.append(&mut body_vertices);
 
@@ -426,7 +413,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         canvas.render_geometry(&vertices, None, &indices).unwrap();
 
-        for body in bodies[total_bodies - significant_bodies..].iter() {
+        for body in &significant_bodies {
             body.render(pan_x, pan_y, zoom, &mut canvas);
         }
 
@@ -450,8 +437,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // sim steps per render
         for _ in 0..sim_steps {
-            let total_bodies = bodies.len();
-
             // Before pinning
             for body in &mut bodies.iter_mut() {
                 body.x += body.v_x / res as f64;
@@ -460,42 +445,33 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 body.v_y *= 0.999999;
             }
 
-            for i in total_bodies - significant_bodies..total_bodies {
-                let body2 = bodies[i];
+            for body2 in &significant_bodies {
+                bodies.par_iter_mut().for_each(|body| {
+                    let delta_y = body2.y - body.y;
+                    let delta_x = body2.x - body.x;
+                    let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
+                    // f = m1m2/r^2
 
-                bodies[..total_bodies - significant_bodies]
-                    .par_iter_mut()
-                    .for_each(|body| {
-                        let delta_y = body2.y - body.y;
-                        let delta_x = body2.x - body.x;
-                        let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
-                        // f = m1m2/r^2
+                    // These are usually both sqrt so it works, collision
+                    if dist_sq < body2.mass {
+                        body.color = body2.color;
+                        body.pinned = true;
+                        body.x = body.init_x;
+                        body.y = body.init_y;
+                        body.v_x = 0.0;
+                        body.v_y = 0.0;
+                    }
 
-                        // These are usually both sqrt so it works, collision
-                        if dist_sq < body2.mass {
-                            body.color = body2.color;
-                            body.pinned = true;
-                            body.x = body.init_x;
-                            body.y = body.init_y;
-                            body.v_x = 0.0;
-                            body.v_y = 0.0;
-                        }
+                    let force = body2.mass / (dist_sq * res as f64 + 0.00000001);
 
-                        let force = body2.mass / (dist_sq * res as f64 + 0.00000001);
+                    let angle = f64::atan2(delta_y, delta_x);
 
-                        let angle = f64::atan2(delta_y, delta_x);
-
-                        body.v_x += force * angle.cos();
-                        body.v_y += force * angle.sin();
-                    });
+                    body.v_x += force * angle.cos();
+                    body.v_y += force * angle.sin();
+                });
             }
 
-            let mut significant_bodies_vec = bodies[total_bodies - significant_bodies..]
-                .iter()
-                .map(|&body| body)
-                .collect::<Vec<Body>>();
-
-            bodies = bodies[..total_bodies - significant_bodies]
+            bodies = bodies
                 .iter()
                 .filter_map(|&body| {
                     if body.pinned {
@@ -506,8 +482,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 })
                 .collect::<Vec<Body>>();
-
-            bodies.append(&mut significant_bodies_vec);
         }
     }
 
