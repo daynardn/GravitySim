@@ -283,9 +283,31 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         canvas.clear();
         canvas.set_draw_color(Color::RGB(255, 255, 255));
 
+        let (mut vertices, mut indices) = (vec![], vec![]);
+
+        let mut bodies_rendered = 0;
+
         for body in &bodies {
-            body.render(&mut canvas, pan_x, pan_y, zoom);
+            let (mut body_vertices, body_indices) =
+                body.get_render(&mut canvas, pan_x, pan_y, zoom);
+
+            if body_vertices.len() == 0 {
+                continue;
+            }
+
+            vertices.append(&mut body_vertices);
+
+            indices.append(
+                &mut body_indices
+                    .iter()
+                    .map(|i| i + 5 * bodies_rendered)
+                    .collect(),
+            );
+
+            bodies_rendered += 1;
         }
+
+        canvas.render_geometry(&vertices, None, &indices).unwrap();
 
         canvas.present();
 
