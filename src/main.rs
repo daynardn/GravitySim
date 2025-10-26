@@ -76,6 +76,47 @@ fn generate_circle_fan(
     (vertices, indices)
 }
 
+fn generate_circle_fan_color_edge(
+    center: FPoint,
+    radius: f32,
+    segments: usize,
+    color: FColor,
+) -> (Vec<Vertex>, Vec<i32>) {
+    let mut vertices: Vec<Vertex> = vec![];
+    let mut indices = vec![];
+
+    // angle step
+    let step = (std::f32::consts::PI * 2.0) / segments as f32;
+
+    // center
+    vertices.push(Vertex {
+        position: FPoint::new(center.x, center.y),
+        color,
+        tex_coord: FPoint::new(0.0, 0.0),
+    });
+
+    for segment in 0..=segments {
+        let angle = step * segment as f32;
+
+        vertices.push(Vertex {
+            position: FPoint::new(
+                center.x + radius * angle.cos(),
+                center.y + radius * angle.sin(),
+            ),
+            color: FColor::BLACK,
+            tex_coord: FPoint::new(0.0, 0.0),
+        });
+
+        // Don't want to include a "line" triangle with just 2 verts
+        if segment != 0 {
+            indices.push(0); // center
+            indices.push(segment as i32);
+            indices.push(segment as i32 + 1);
+        }
+    }
+
+    (vertices, indices)
+}
 #[derive(Clone, Copy)]
 struct Body {
     x: f64,
@@ -123,7 +164,7 @@ impl Body {
     }
 
     fn render(&self, pan_x: f32, pan_y: f32, zoom: f32, canvas: &mut Canvas<Window>) {
-        let (vertices, indices) = generate_circle_fan(
+        let (vertices, indices) = generate_circle_fan_color_edge(
             FPoint::new(
                 (self.x as f32 * zoom) + pan_x,
                 (self.y as f32 * zoom) + pan_y,
@@ -169,7 +210,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut render_mode = 0;
 
     let res = 3.0;
-    let size = (500 as f64 * res) as i32;
+    let size = (50 as f64 * res) as i32;
     for x in -size..size {
         for y in -size / 2..size / 2 {
             bodies.push(Body::new(
