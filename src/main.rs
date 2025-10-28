@@ -235,6 +235,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pan_y = 0.0;
 
     let mut compute_time = 0;
+    let mut render_time = 0;
 
     let mut zoom = 1.0;
 
@@ -429,6 +430,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        let render_start = SystemTime::now();
+
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
         canvas.set_draw_color(Color::RGB(255, 255, 255));
@@ -458,6 +461,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             body.render(pan_x, pan_y, zoom, &mut canvas);
         }
 
+        render_time = render_start.elapsed()?.as_nanos();
+
         canvas.set_draw_color(Color::RGB(255, 255, 255));
         let _ = canvas.draw_debug_text(render_mode.to_string().as_str(), Point::new(100, 0));
         let _ = canvas.draw_debug_text(sim_steps.to_string().as_str(), Point::new(100, 10));
@@ -471,9 +476,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             ("Compute time: ".to_string() + &compute_time.to_string()).as_str(),
             Point::new(180, 0),
         );
+
+        let _ = canvas.draw_debug_text(
+            ("Render time: ".to_string() + &render_time.to_string()).as_str(),
+            Point::new(180, 10),
+        );
         let _ = canvas.draw_debug_text(
             ("Body num: ".to_string() + &bodies.len().to_string()).as_str(),
-            Point::new(180, 10),
+            Point::new(180, 20),
         );
 
         canvas.present();
@@ -497,6 +507,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 });
             }
 
+            // todo par
             bodies = bodies
                 .iter()
                 .filter_map(|&body| {
