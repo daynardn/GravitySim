@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use sdl3::event::Event;
 use sdl3::keyboard::Keycode;
 use sdl3::mouse::MouseButton;
@@ -232,6 +234,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pan_x = 0.0;
     let mut pan_y = 0.0;
 
+    let mut compute_time = 0;
+
     let mut zoom = 1.0;
 
     let mut render_mode = 0;
@@ -320,7 +324,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
 
-                    if render_mode == 2 {
+                    if render_mode == 0 || render_mode == 1 {
+                        sim_steps = 1;
+                    } else if render_mode == 2 {
                         sim_steps = 20;
                     } else if render_mode == 3 {
                         sim_steps = 500;
@@ -429,20 +435,11 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let (mut vertices, mut indices) = (vec![], vec![]);
 
-        let mut bodies_rendered = 0;
-
-        for body in &bodies {
+        for (index, body) in bodies.iter().enumerate() {
             let (mut body_vertices, body_indices) = body.get_render(pan_x, pan_y, zoom);
             vertices.append(&mut body_vertices);
 
-            indices.append(
-                &mut body_indices
-                    .iter()
-                    .map(|i| i + 3 * bodies_rendered)
-                    .collect(),
-            );
-
-            bodies_rendered += 1;
+            indices.append(&mut body_indices.iter().map(|i| i + 3 * index as i32).collect());
         }
 
         if render_mode == 0 {
@@ -463,17 +460,27 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         canvas.set_draw_color(Color::RGB(255, 255, 255));
         let _ = canvas.draw_debug_text(render_mode.to_string().as_str(), Point::new(100, 0));
+        let _ = canvas.draw_debug_text(sim_steps.to_string().as_str(), Point::new(100, 10));
 
         if paused {
             let _ = canvas.draw_debug_text("||", Point::new(80, 0));
         } else {
             let _ = canvas.draw_debug_text(">", Point::new(80, 0));
         }
+        let _ = canvas.draw_debug_text(
+            ("Compute time: ".to_string() + &compute_time.to_string()).as_str(),
+            Point::new(180, 0),
+        );
+        let _ = canvas.draw_debug_text(
+            ("Body num: ".to_string() + &bodies.len().to_string()).as_str(),
+            Point::new(180, 10),
+        );
 
         canvas.present();
 
         // ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
 
+        let compute_start = SystemTime::now();
         // sim steps per render
         for _ in 0..sim_steps * res * (!paused as i32) {
             // Before pinning
@@ -502,6 +509,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })
                 .collect::<Vec<Body>>();
         }
+
+        compute_time = (compute_start.elapsed()?.as_nanos() * 10000)
+            / (bodies.len().max(1) * sim_steps as usize) as u128;
     }
 
     Ok(())
