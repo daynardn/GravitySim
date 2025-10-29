@@ -280,7 +280,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     significant_bodies.push(Body::new(
         0.0,
-        -50.0,
+        -500.0,
         0.0,
         0.0,
         1000.0,
@@ -288,7 +288,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         FColor::YELLOW,
     ));
     significant_bodies.push(Body::new(
-        -100.6,
+        -1000.6,
         50.6,
         0.0,
         0.0,
@@ -296,10 +296,18 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         true,
         FColor::BLUE,
     ));
-    significant_bodies.push(Body::new(100.6, 150.6, 0.0, 0.0, 1000.0, true, FColor::RED));
+    significant_bodies.push(Body::new(
+        1090.6,
+        150.6,
+        0.0,
+        0.0,
+        1000.0,
+        true,
+        FColor::RED,
+    ));
     significant_bodies.push(Body::new(
         -300.6,
-        100.6,
+        1000.6,
         0.0,
         0.0,
         1400.0,
@@ -486,6 +494,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ));
             }
 
+            // Iterate on bodies not map since we need the order constant to avoid z clipping
             for body in significant_bodies.iter() {
                 canvas.set_draw_color(body.color);
 
@@ -534,12 +543,12 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         // sim steps per render
         for _ in 0..sim_steps * res * (!paused as i32) {
             // Before pinning
-            for body in &mut bodies.iter_mut() {
+            bodies.par_iter_mut().for_each(|body| {
                 body.x += body.v_x / res as f64;
                 body.y += body.v_y / res as f64;
                 body.v_x *= 0.999999;
                 body.v_y *= 0.999999;
-            }
+            });
 
             for body2 in &significant_bodies {
                 bodies.par_iter_mut().for_each(|body| {
@@ -548,17 +557,11 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             // todo par
-            bodies = bodies
-                .iter()
-                .filter_map(|&body| {
-                    if body.pinned {
-                        pinned_bodies.push(body.clone());
-                        None
-                    } else {
-                        Some(body)
-                    }
-                })
-                .collect::<Vec<Body>>();
+            let (bodies_vec, mut pinned_vec): (Vec<Body>, Vec<Body>) =
+                bodies.par_iter().partition(|&body| !body.pinned);
+
+            bodies = bodies_vec;
+            pinned_bodies.append(&mut pinned_vec);
         }
 
         compute_time = (compute_start.elapsed()?.as_nanos() * 10000)
