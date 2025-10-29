@@ -1,6 +1,9 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::collections::HashMap;
+use std::time::SystemTime;
 
+use rayon::iter::Map;
 use sdl3::event::Event;
+use sdl3::gpu::ColorComponentFlags;
 use sdl3::keyboard::Keycode;
 use sdl3::mouse::MouseButton;
 use sdl3::pixels::{Color, FColor};
@@ -9,6 +12,24 @@ use sdl3::render::{Canvas, FPoint, Vertex};
 
 use rayon::prelude::*;
 use sdl3::video::Window;
+
+fn irgb(color: FColor) -> (i32, i32, i32) {
+    let rgb = color.rgb();
+    return (
+        (rgb.0 * 255.) as i32,
+        (rgb.1 * 255.) as i32,
+        (rgb.2 * 255.) as i32,
+    );
+}
+
+fn irgb_to_fcolor(rgb: (i32, i32, i32)) -> FColor {
+    return FColor {
+        r: rgb.0 as f32 / 255.,
+        g: rgb.1 as f32 / 255.,
+        b: rgb.2 as f32 / 255.,
+        a: 1.0,
+    };
+}
 
 // "Borrowed"
 fn generate_circle_fan(
@@ -213,7 +234,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         .position_centered()
         .resizable()
         .fullscreen()
-        .opengl()
+        .vulkan()
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -235,7 +256,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pan_y = 0.0;
 
     let mut compute_time = 0;
-    let mut render_time = 0;
+    let mut render_time;
 
     let mut zoom = 1.0;
 
@@ -353,8 +374,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     window_id: _,
                     which: _,
                     clicks: _,
-                    x,
-                    y,
+                    x: _,
+                    y: _,
                 } => {
                     if mouse_btn == MouseButton::Middle {
                         panning = true;
@@ -446,12 +467,31 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if render_mode == 0 {
+            let mut point_map: HashMap<(i32, i32, i32), Vec<FPoint>> = HashMap::new();
+
+            for body in significant_bodies.iter() {
+                if !point_map.contains_key(&irgb(body.color)) {
+                    point_map.insert(irgb(body.color), vec![]);
+                }
+            }
+
             for pinned_body in pinned_bodies.iter() {
-                canvas.set_draw_color(pinned_body.color);
-                canvas.draw_point(Point::new(
-                    ((pinned_body.x as f32 * zoom) + pan_x) as i32,
-                    ((pinned_body.y as f32 * zoom) + pan_y) as i32,
-                ))?;
+                // canvas.set_draw_color(pinned_body.color);
+                point_map
+                    .get_mut(&irgb(pinned_body.color))
+                    .unwrap_or(&mut vec![])
+                    .push(FPoint::new(
+                        ((pinned_body.x as f32 * zoom) + pan_x) as f32,
+                        ((pinned_body.y as f32 * zoom) + pan_y) as f32,
+                    ));
+            }
+
+            for body in significant_bodies.iter() {
+                canvas.set_draw_color(body.color);
+
+                let points = &point_map[&irgb(body.color)];
+
+                let _ = canvas.draw_points(&points[..]);
             }
         }
 
