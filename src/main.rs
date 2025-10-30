@@ -516,6 +516,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let delta_y = body2.y - body.y;
                         let delta_x = body2.x - body.x;
                         let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
+                        let dist_sqrt_inv = dist_sq.sqrt().recip();
                         // f = m1m2/r^2
 
                         // These are usually both sqrt so it works, collision
@@ -532,10 +533,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         let force = body2.mass / (dist_sq * res as f32);
 
-                        let dist_sqrt = dist_sq.sqrt();
-
-                        body.v_x += force * (delta_x / dist_sqrt);
-                        body.v_y += force * (delta_y / dist_sqrt);
+                        body.v_x += force * delta_x * dist_sqrt_inv;
+                        body.v_y += force * delta_y * dist_sqrt_inv;
                     }
 
                     Either::Left(*body)
