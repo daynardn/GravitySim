@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::hash::Hasher;
 use std::hash::{DefaultHasher, Hash};
 use std::hint::black_box;
+use std::ptr;
 use std::time::SystemTime;
 
 use rayon::iter::Either;
@@ -128,7 +129,7 @@ fn generate_circle_fan_color_edge(
 struct Body {
     x: f32,
     y: f32,
-    id: u64,
+    id: u32,
     v_x: f32,
     v_y: f32,
     mass: f32,
@@ -149,7 +150,7 @@ impl Body {
         Body {
             x,
             y,
-            id: ((x.to_bits() as u64) << 32) | (y.to_bits() as u64),
+            id: ((x.to_bits() as u32) << 16) | (y.to_bits() as u32),
             v_x,
             v_y,
             mass,
@@ -275,7 +276,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sim_steps_taken = 0;
     let res = 1;
 
-    let mut body_initial_position_map: HashMap<u64, (f32, f32)> = HashMap::new();
+    let mut body_initial_position_map: HashMap<u32, (f32, f32)> = HashMap::new();
 
     for body in &bodies {
         body_initial_position_map.insert(body.id, (body.x, body.y));
@@ -531,10 +532,11 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if dist_sq < body2.mass {
                         body.color_index = body2.color_index;
                         body.pinned = true;
-                        body.x = body_initial_position_map.get(&body.id).unwrap().0;
-                        body.y = body_initial_position_map.get(&body.id).unwrap().1;
+                        body.x = body_initial_position_map[&body.id].0;
+                        body.y = body_initial_position_map[&body.id].1;
                         body.v_x = 0.0;
                         body.v_y = 0.0;
+                        break;
                     }
 
                     let force = body2.mass / (dist_sq * res as f32);
@@ -549,7 +551,24 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             while index < bodies.len() {
                 if bodies[index].pinned {
                     // Don't increment index since removed
-                    pinned_bodies.push(bodies.swap_remove(index));
+                    pinned_bodies.push({
+                        // Unchecked version of swap_remove
+
+                        let this = &mut bodies;
+
+                        let len = this.len();
+
+                        unsafe {
+                            // We replace self[index] with the last element. Note that if the
+                            // bounds check above succeeds there must be a last element (which
+                            // can be self[index] itself).
+                            let value = ptr::read(this.as_ptr().add(index));
+                            let base_ptr = this.as_mut_ptr();
+                            ptr::copy(base_ptr.add(len - 1), base_ptr.add(index), 1);
+                            this.set_len(len - 1);
+                            value
+                        }
+                    });
                 } else {
                     index += 1;
                 }
