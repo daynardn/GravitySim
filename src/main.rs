@@ -168,9 +168,9 @@ impl Body {
                 (self.x as f32 * zoom) + pan_x,
                 (self.y as f32 * zoom) + pan_y,
             ), // center
-            self.mass.abs().sqrt() as f32 * zoom.max(0.1), // radius
-            3,                                             // segments
-            self.color,                                    // color
+            self.mass.abs().sqrt() * zoom.max(0.1), // radius
+            3,                                      // segments
+            self.color,                             // color
         );
 
         return (vertices, indices);
