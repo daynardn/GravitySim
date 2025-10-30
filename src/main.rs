@@ -532,8 +532,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         let force = body2.mass / (dist_sq * res as f32);
 
-                        body.v_x += force * (delta_x / dist_sq.sqrt());
-                        body.v_y += force * (delta_y / dist_sq.sqrt());
+                        let dist_sqrt = dist_sq.sqrt();
+
+                        body.v_x += force * (delta_x / dist_sqrt);
+                        body.v_y += force * (delta_y / dist_sqrt);
                     }
 
                     Either::Left(*body)
