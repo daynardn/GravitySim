@@ -201,7 +201,7 @@ impl Body {
     }
 }
 
-fn apply_force(body: &mut Body, body2: Body, res: i32) {
+fn apply_force(body: &mut Body, body2: &Body, res: i32) {
     let delta_y = body2.y - body.y;
     let delta_x = body2.x - body.x;
     let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
@@ -552,7 +552,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 body.v_y *= 0.999999;
 
                 for body2 in &significant_bodies {
-                    apply_force(body, *body2, res);
+                    apply_force(body, body2, res);
                 }
 
                 if !body.pinned {
