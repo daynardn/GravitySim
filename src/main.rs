@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::hash::Hasher;
+use std::hash::{DefaultHasher, Hash};
 use std::hint::black_box;
 use std::time::SystemTime;
 
@@ -126,8 +128,7 @@ fn generate_circle_fan_color_edge(
 struct Body {
     x: f32,
     y: f32,
-    init_x: f32,
-    init_y: f32,
+    id: u64,
     v_x: f32,
     v_y: f32,
     mass: f32,
@@ -148,8 +149,7 @@ impl Body {
         Body {
             x,
             y,
-            init_x: x,
-            init_y: y,
+            id: ((x.to_bits() as u64) << 32) | (y.to_bits() as u64),
             v_x,
             v_y,
             mass,
@@ -275,6 +275,12 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sim_steps_taken = 0;
     let res = 1;
 
+    let mut body_initial_position_map: HashMap<u64, (f32, f32)> = HashMap::new();
+
+    for body in &bodies {
+        body_initial_position_map.insert(body.id, (body.x, body.y));
+    }
+
     'running: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -367,7 +373,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if drawing {
                         for box_x in -10..10 {
                             for box_y in -10..10 {
-                                bodies.push(Body::new(
+                                let body = Body::new(
                                     (((x - pan_x) / zoom) + box_x as f32 / (zoom / 9.0)).into(),
                                     (((y - pan_y) / zoom) + box_y as f32 / (zoom / 9.0)).into(),
                                     0.0,
@@ -375,7 +381,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     100.0,
                                     false,
                                     1,
-                                ));
+                                );
+
+                                bodies.push(body);
+                                body_initial_position_map.insert(body.id, (body.x, body.y));
                             }
                         }
                     }
@@ -523,8 +532,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if dist_sq < body2.mass {
                             body.color_index = body2.color_index;
                             body.pinned = true;
-                            body.x = body.init_x;
-                            body.y = body.init_y;
+                            body.x = body_initial_position_map.get(&body.id).unwrap().0;
+                            body.y = body_initial_position_map.get(&body.id).unwrap().1;
                             body.v_x = 0.0;
                             body.v_y = 0.0;
 
