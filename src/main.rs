@@ -202,30 +202,6 @@ impl Body {
     }
 }
 
-fn apply_force(body: &mut Body, body2: &Body, res: i32) {
-    let delta_y = body2.y - body.y;
-    let delta_x = body2.x - body.x;
-    let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
-    // f = m1m2/r^2
-
-    // These are usually both sqrt so it works, collision
-    if dist_sq < body2.mass {
-        body.color_index = body2.color_index;
-        body.pinned = true;
-        body.x = body.init_x;
-        body.y = body.init_y;
-        body.v_x = 0.0;
-        body.v_y = 0.0;
-    }
-
-    let force = body2.mass / (dist_sq * res as f32 + 0.00000001);
-
-    let angle = f32::atan2(delta_y, delta_x);
-
-    body.v_x += force * angle.cos();
-    body.v_y += force * angle.sin();
-}
-
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sdl_context = sdl3::init()?;
     let video_subsystem = sdl_context.video()?;
@@ -280,7 +256,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let mut color_vec = [
+    let color_vec = [
         FColor::YELLOW,
         FColor::WHITE,
         FColor::GRAY,
@@ -530,23 +506,42 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let compute_start = SystemTime::now();
         // sim steps per render
         for _ in 0..sim_steps * res * (!paused as i32) {
-            let (bodies_vec, mut pinned_vec) = bodies.par_iter_mut().partition_map(|body| {
-                // Before pinning
-                body.x += body.v_x / res as f32;
-                body.y += body.v_y / res as f32;
-                body.v_x *= 0.999999;
-                body.v_y *= 0.999999;
+            let (bodies_vec, mut pinned_vec) =
+                bodies.par_iter_mut().partition_map(|body: &mut Body| {
+                    // Before pinning
+                    body.x += body.v_x / res as f32;
+                    body.y += body.v_y / res as f32;
+                    body.v_x *= 0.999999;
+                    body.v_y *= 0.999999;
 
-                for body2 in &significant_bodies {
-                    apply_force(body, body2, res);
-                }
+                    for body2 in &significant_bodies {
+                        let delta_y = body2.y - body.y;
+                        let delta_x = body2.x - body.x;
+                        let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
+                        // f = m1m2/r^2
 
-                if !body.pinned {
+                        // These are usually both sqrt so it works, collision
+                        if dist_sq < body2.mass {
+                            body.color_index = body2.color_index;
+                            body.pinned = true;
+                            body.x = body.init_x;
+                            body.y = body.init_y;
+                            body.v_x = 0.0;
+                            body.v_y = 0.0;
+
+                            return Either::Right(*body);
+                        }
+
+                        let force = body2.mass / (dist_sq * res as f32 + 0.00000001);
+
+                        let angle = f32::atan2(delta_y, delta_x);
+
+                        body.v_x += force * angle.cos();
+                        body.v_y += force * angle.sin();
+                    }
+
                     Either::Left(*body)
-                } else {
-                    Either::Right(*body)
-                }
-            });
+                });
 
             bodies = bodies_vec;
             pinned_bodies.append(&mut pinned_vec);
