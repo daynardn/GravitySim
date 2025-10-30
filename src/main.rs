@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use rayon::iter::Map;
+use rayon::iter::{Either, Map};
 use sdl3::event::Event;
 use sdl3::gpu::ColorComponentFlags;
 use sdl3::keyboard::Keycode;
@@ -552,14 +552,17 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 body.v_y *= 0.999999;
             });
 
-            bodies.par_iter_mut().for_each(|body| {
+            let (bodies_vec, mut pinned_vec) = bodies.par_iter_mut().partition_map(|body| {
                 for body2 in &significant_bodies {
                     apply_force(body, *body2, res);
                 }
-            });
 
-            let (bodies_vec, mut pinned_vec): (Vec<Body>, Vec<Body>) =
-                bodies.par_iter().partition(|&body| !body.pinned);
+                if !body.pinned {
+                    Either::Left(*body)
+                } else {
+                    Either::Right(*body)
+                }
+            });
 
             bodies = bodies_vec;
             pinned_bodies.append(&mut pinned_vec);
