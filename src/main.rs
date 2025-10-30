@@ -15,21 +15,6 @@ use std::hash::Hasher;
 use rayon::prelude::*;
 use sdl3::video::Window;
 
-fn irgb(color: FColor) -> (i32, i32, i32) {
-    let rgb = color.rgb();
-    return (
-        (rgb.0 * 255.) as i32,
-        (rgb.1 * 255.) as i32,
-        (rgb.2 * 255.) as i32,
-    );
-}
-
-fn rgb_hash(color: FColor) -> u64 {
-    let mut s = DefaultHasher::new();
-    irgb(color).hash(&mut s);
-    s.finish()
-}
-
 // "Borrowed"
 fn generate_circle_fan(
     center: FPoint,
@@ -149,11 +134,19 @@ struct Body {
     v_y: f32,
     mass: f32,
     pinned: bool,
-    color_hash: u64,
+    color_index: u8,
 }
 
 impl Body {
-    pub fn new(x: f32, y: f32, v_x: f32, v_y: f32, mass: f32, pinned: bool, color: FColor) -> Self {
+    pub fn new(
+        x: f32,
+        y: f32,
+        v_x: f32,
+        v_y: f32,
+        mass: f32,
+        pinned: bool,
+        color_index: u8,
+    ) -> Self {
         Body {
             x,
             y,
@@ -163,7 +156,7 @@ impl Body {
             v_y,
             mass,
             pinned,
-            color_hash: rgb_hash(color),
+            color_index,
         }
     }
 
@@ -217,7 +210,7 @@ fn apply_force(body: &mut Body, body2: &Body, res: i32) {
 
     // These are usually both sqrt so it works, collision
     if dist_sq < body2.mass {
-        body.color_hash = body2.color_hash;
+        body.color_index = body2.color_index;
         body.pinned = true;
         body.x = body.init_x;
         body.y = body.init_y;
@@ -282,56 +275,25 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 0.0,
                 100.0,
                 false,
-                FColor::WHITE,
+                1,
             ));
         }
     }
 
-    let mut color_hashmap = HashMap::new();
-    color_hashmap.insert(rgb_hash(FColor::YELLOW), FColor::YELLOW);
-    color_hashmap.insert(rgb_hash(FColor::WHITE), FColor::WHITE);
-    color_hashmap.insert(rgb_hash(FColor::GRAY), FColor::GRAY);
-    color_hashmap.insert(rgb_hash(FColor::BLUE), FColor::BLUE);
-    color_hashmap.insert(rgb_hash(FColor::RED), FColor::RED);
-    color_hashmap.insert(rgb_hash(FColor::GREEN), FColor::GREEN);
-    color_hashmap.insert(rgb_hash(FColor::MAGENTA), FColor::MAGENTA);
-
-    significant_bodies.push(Body::new(
-        0.0,
-        -500.0,
-        0.0,
-        0.0,
-        1000.0,
-        true,
+    let mut color_vec = [
         FColor::YELLOW,
-    ));
-    significant_bodies.push(Body::new(
-        -1000.6,
-        50.6,
-        0.0,
-        0.0,
-        1000.0,
-        true,
+        FColor::WHITE,
+        FColor::GRAY,
         FColor::BLUE,
-    ));
-    significant_bodies.push(Body::new(
-        1090.6,
-        150.6,
-        0.0,
-        0.0,
-        1000.0,
-        true,
         FColor::RED,
-    ));
-    significant_bodies.push(Body::new(
-        -300.6,
-        1000.6,
-        0.0,
-        0.0,
-        1400.0,
-        true,
-        FColor::GREY,
-    ));
+        FColor::GREEN,
+        FColor::MAGENTA,
+    ];
+
+    significant_bodies.push(Body::new(0.0, -500.0, 0.0, 0.0, 1000.0, true, 0));
+    significant_bodies.push(Body::new(-1000.6, 50.6, 0.0, 0.0, 1000.0, true, 3));
+    significant_bodies.push(Body::new(1090.6, 150.6, 0.0, 0.0, 1000.0, true, 4));
+    significant_bodies.push(Body::new(-300.6, 1000.6, 0.0, 0.0, 1400.0, true, 2));
 
     let mut pinned_bodies: Vec<Body> = vec![];
 
@@ -438,7 +400,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     0.0,
                                     100.0,
                                     false,
-                                    FColor::WHITE,
+                                    1,
                                 ));
                             }
                         }
@@ -488,25 +450,25 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         for (index, body) in bodies.iter().enumerate() {
             let (mut body_vertices, body_indices) =
-                body.get_render(pan_x, pan_y, zoom, color_hashmap[&body.color_hash]);
+                body.get_render(pan_x, pan_y, zoom, color_vec[body.color_index as usize]);
             vertices.append(&mut body_vertices);
 
             indices.append(&mut body_indices.iter().map(|i| i + 3 * index as i32).collect());
         }
 
         if render_mode == 0 {
-            let mut point_map: HashMap<u64, Vec<FPoint>> = HashMap::new();
+            let mut point_map: HashMap<usize, Vec<FPoint>> = HashMap::new();
 
             for body in significant_bodies.iter() {
-                if !point_map.contains_key(&body.color_hash) {
-                    point_map.insert(body.color_hash, vec![]);
+                if !point_map.contains_key(&(body.color_index as usize)) {
+                    point_map.insert(body.color_index as usize, vec![]);
                 }
             }
 
             for pinned_body in pinned_bodies.iter() {
                 // canvas.set_draw_color(pinned_body.color);
                 point_map
-                    .get_mut(&pinned_body.color_hash)
+                    .get_mut(&(pinned_body.color_index as usize))
                     .unwrap_or(&mut vec![])
                     .push(FPoint::new(
                         ((pinned_body.x as f32 * zoom) + pan_x) as f32,
@@ -516,9 +478,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Iterate on bodies not map since we need the order constant to avoid z clipping
             for body in significant_bodies.iter() {
-                canvas.set_draw_color(color_hashmap[&body.color_hash]);
+                canvas.set_draw_color(color_vec[body.color_index as usize]);
 
-                let points = &point_map[&body.color_hash];
+                let points = &point_map[&(body.color_index as usize)];
 
                 let _ = canvas.draw_points(&points[..]);
             }
@@ -532,7 +494,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 pan_y,
                 zoom,
                 &mut canvas,
-                color_hashmap[&body.color_hash],
+                color_vec[body.color_index as usize],
             );
         }
 

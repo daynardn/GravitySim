@@ -17,3 +17,6 @@
 
 # Color hashes ((f32, f32, f32) -> (u64)) THIS GOOD???
 18232763
+
+# Color index (u64 hash -> u8) ?? how man
+16167737
