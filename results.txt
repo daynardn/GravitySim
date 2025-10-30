@@ -14,3 +14,6 @@
 
 # fix deref body2
 26831727
+
+# Color hashes ((f32, f32, f32) -> (u64)) THIS GOOD???
+18232763

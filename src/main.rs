@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::{DefaultHasher, Hash};
 use std::time::SystemTime;
 
 use rayon::iter::Either;
@@ -8,6 +9,8 @@ use sdl3::mouse::MouseButton;
 use sdl3::pixels::{Color, FColor};
 use sdl3::rect::Point;
 use sdl3::render::{Canvas, FPoint, Vertex};
+
+use std::hash::Hasher;
 
 use rayon::prelude::*;
 use sdl3::video::Window;
@@ -19,6 +22,12 @@ fn irgb(color: FColor) -> (i32, i32, i32) {
         (rgb.1 * 255.) as i32,
         (rgb.2 * 255.) as i32,
     );
+}
+
+fn rgb_hash(color: FColor) -> u64 {
+    let mut s = DefaultHasher::new();
+    irgb(color).hash(&mut s);
+    s.finish()
 }
 
 // "Borrowed"
@@ -140,7 +149,7 @@ struct Body {
     v_y: f32,
     mass: f32,
     pinned: bool,
-    color: FColor,
+    color_hash: u64,
 }
 
 impl Body {
@@ -154,15 +163,17 @@ impl Body {
             v_y,
             mass,
             pinned,
-            color,
+            color_hash: rgb_hash(color),
         }
     }
 
-    pub fn get_render(&self, pan_x: f32, pan_y: f32, zoom: f32) -> (Vec<Vertex>, Vec<i32>) {
-        if self.color == FColor::BLACK {
-            return (vec![], vec![]);
-        }
-
+    pub fn get_render(
+        &self,
+        pan_x: f32,
+        pan_y: f32,
+        zoom: f32,
+        color: FColor,
+    ) -> (Vec<Vertex>, Vec<i32>) {
         let (vertices, indices) = generate_circle_fan(
             FPoint::new(
                 (self.x as f32 * zoom) + pan_x,
@@ -170,13 +181,20 @@ impl Body {
             ), // center
             self.mass.abs().sqrt() * zoom.max(0.1), // radius
             3,                                      // segments
-            self.color,                             // color
+            color,                                  // color
         );
 
         return (vertices, indices);
     }
 
-    fn render(&self, pan_x: f32, pan_y: f32, zoom: f32, canvas: &mut Canvas<Window>) {
+    fn render(
+        &self,
+        pan_x: f32,
+        pan_y: f32,
+        zoom: f32,
+        canvas: &mut Canvas<Window>,
+        color: FColor,
+    ) {
         let (vertices, indices) = generate_circle_fan_color_edge(
             FPoint::new(
                 (self.x as f32 * zoom) + pan_x,
@@ -184,7 +202,7 @@ impl Body {
             ), // center
             self.mass.abs().sqrt() as f32 * zoom.max(0.1), // radius
             30,                                            // segments
-            self.color,                                    // color
+            color,                                         // color
         );
 
         canvas.render_geometry(&vertices, None, &indices).unwrap();
@@ -199,7 +217,7 @@ fn apply_force(body: &mut Body, body2: &Body, res: i32) {
 
     // These are usually both sqrt so it works, collision
     if dist_sq < body2.mass {
-        body.color = body2.color;
+        body.color_hash = body2.color_hash;
         body.pinned = true;
         body.x = body.init_x;
         body.y = body.init_y;
@@ -268,6 +286,15 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             ));
         }
     }
+
+    let mut color_hashmap = HashMap::new();
+    color_hashmap.insert(rgb_hash(FColor::YELLOW), FColor::YELLOW);
+    color_hashmap.insert(rgb_hash(FColor::WHITE), FColor::WHITE);
+    color_hashmap.insert(rgb_hash(FColor::GRAY), FColor::GRAY);
+    color_hashmap.insert(rgb_hash(FColor::BLUE), FColor::BLUE);
+    color_hashmap.insert(rgb_hash(FColor::RED), FColor::RED);
+    color_hashmap.insert(rgb_hash(FColor::GREEN), FColor::GREEN);
+    color_hashmap.insert(rgb_hash(FColor::MAGENTA), FColor::MAGENTA);
 
     significant_bodies.push(Body::new(
         0.0,
@@ -460,25 +487,26 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (mut vertices, mut indices) = (vec![], vec![]);
 
         for (index, body) in bodies.iter().enumerate() {
-            let (mut body_vertices, body_indices) = body.get_render(pan_x, pan_y, zoom);
+            let (mut body_vertices, body_indices) =
+                body.get_render(pan_x, pan_y, zoom, color_hashmap[&body.color_hash]);
             vertices.append(&mut body_vertices);
 
             indices.append(&mut body_indices.iter().map(|i| i + 3 * index as i32).collect());
         }
 
         if render_mode == 0 {
-            let mut point_map: HashMap<(i32, i32, i32), Vec<FPoint>> = HashMap::new();
+            let mut point_map: HashMap<u64, Vec<FPoint>> = HashMap::new();
 
             for body in significant_bodies.iter() {
-                if !point_map.contains_key(&irgb(body.color)) {
-                    point_map.insert(irgb(body.color), vec![]);
+                if !point_map.contains_key(&body.color_hash) {
+                    point_map.insert(body.color_hash, vec![]);
                 }
             }
 
             for pinned_body in pinned_bodies.iter() {
                 // canvas.set_draw_color(pinned_body.color);
                 point_map
-                    .get_mut(&irgb(pinned_body.color))
+                    .get_mut(&pinned_body.color_hash)
                     .unwrap_or(&mut vec![])
                     .push(FPoint::new(
                         ((pinned_body.x as f32 * zoom) + pan_x) as f32,
@@ -488,9 +516,9 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Iterate on bodies not map since we need the order constant to avoid z clipping
             for body in significant_bodies.iter() {
-                canvas.set_draw_color(body.color);
+                canvas.set_draw_color(color_hashmap[&body.color_hash]);
 
-                let points = &point_map[&irgb(body.color)];
+                let points = &point_map[&body.color_hash];
 
                 let _ = canvas.draw_points(&points[..]);
             }
@@ -499,7 +527,13 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         canvas.render_geometry(&vertices, None, &indices).unwrap();
 
         for body in &significant_bodies {
-            body.render(pan_x, pan_y, zoom, &mut canvas);
+            body.render(
+                pan_x,
+                pan_y,
+                zoom,
+                &mut canvas,
+                color_hashmap[&body.color_hash],
+            );
         }
 
         render_time = render_start.elapsed()?.as_nanos();
