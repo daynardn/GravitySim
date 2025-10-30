@@ -544,15 +544,13 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let compute_start = SystemTime::now();
         // sim steps per render
         for _ in 0..sim_steps * res * (!paused as i32) {
-            // Before pinning
-            bodies.par_iter_mut().for_each(|body| {
+            let (bodies_vec, mut pinned_vec) = bodies.par_iter_mut().partition_map(|body| {
+                // Before pinning
                 body.x += body.v_x / res as f32;
                 body.y += body.v_y / res as f32;
                 body.v_x *= 0.999999;
                 body.v_y *= 0.999999;
-            });
 
-            let (bodies_vec, mut pinned_vec) = bodies.par_iter_mut().partition_map(|body| {
                 for body2 in &significant_bodies {
                     apply_force(body, *body2, res);
                 }
