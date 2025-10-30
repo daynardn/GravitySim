@@ -125,7 +125,7 @@ fn generate_circle_fan_color_edge(
 struct Body {
     x: f32,
     y: f32,
-    id: u32,
+    id: u64,
     v_x: f32,
     v_y: f32,
     mass: f32,
@@ -146,7 +146,7 @@ impl Body {
         Body {
             x,
             y,
-            id: ((x.to_bits() as u32) << 16) | (y.to_bits() as u32),
+            id: ((x.to_bits() as u64) << 32) | (y.to_bits() as u64),
             v_x,
             v_y,
             mass,
@@ -270,9 +270,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut sim_steps = 1;
     let mut sim_steps_taken = 0;
+    let mut render_timer = SystemTime::now();
     let res = 1;
 
-    let mut body_initial_position_map: HashMap<u32, (f32, f32)> = HashMap::new();
+    let mut body_initial_position_map: HashMap<u64, (f32, f32)> = HashMap::new();
 
     for body in &bodies {
         body_initial_position_map.insert(body.id, (body.x, body.y));
@@ -420,90 +421,93 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        let render_start = SystemTime::now();
+        if render_timer.elapsed()?.as_secs_f32() > 1.0 / 120.0 {
+            let render_start = SystemTime::now();
+            render_timer = render_start;
 
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
-        canvas.clear();
-        canvas.set_draw_color(Color::RGB(255, 255, 255));
+            canvas.set_draw_color(Color::RGB(0, 0, 0));
+            canvas.clear();
+            canvas.set_draw_color(Color::RGB(255, 255, 255));
 
-        let (mut vertices, mut indices) = (vec![], vec![]);
+            let (mut vertices, mut indices) = (vec![], vec![]);
 
-        for (index, body) in bodies.iter().enumerate() {
-            let (mut body_vertices, body_indices) =
-                body.get_render(pan_x, pan_y, zoom, color_vec[body.color_index as usize]);
-            vertices.append(&mut body_vertices);
+            for (index, body) in bodies.iter().enumerate() {
+                let (mut body_vertices, body_indices) =
+                    body.get_render(pan_x, pan_y, zoom, color_vec[body.color_index as usize]);
+                vertices.append(&mut body_vertices);
 
-            indices.append(&mut body_indices.iter().map(|i| i + 3 * index as i32).collect());
-        }
+                indices.append(&mut body_indices.iter().map(|i| i + 3 * index as i32).collect());
+            }
 
-        if render_mode == 0 {
-            let mut point_map: HashMap<usize, Vec<FPoint>> = HashMap::new();
+            if render_mode == 0 {
+                let mut point_map: HashMap<usize, Vec<FPoint>> = HashMap::new();
 
-            for body in significant_bodies.iter() {
-                if !point_map.contains_key(&(body.color_index as usize)) {
-                    point_map.insert(body.color_index as usize, vec![]);
+                for body in significant_bodies.iter() {
+                    if !point_map.contains_key(&(body.color_index as usize)) {
+                        point_map.insert(body.color_index as usize, vec![]);
+                    }
+                }
+
+                for pinned_body in pinned_bodies.iter() {
+                    // canvas.set_draw_color(pinned_body.color);
+                    point_map
+                        .get_mut(&(pinned_body.color_index as usize))
+                        .unwrap_or(&mut vec![])
+                        .push(FPoint::new(
+                            ((pinned_body.x as f32 * zoom) + pan_x) as f32,
+                            ((pinned_body.y as f32 * zoom) + pan_y) as f32,
+                        ));
+                }
+
+                // Iterate on bodies not map since we need the order constant to avoid z clipping
+                for body in significant_bodies.iter() {
+                    canvas.set_draw_color(color_vec[body.color_index as usize]);
+
+                    let points = &point_map[&(body.color_index as usize)];
+
+                    let _ = canvas.draw_points(&points[..]);
                 }
             }
 
-            for pinned_body in pinned_bodies.iter() {
-                // canvas.set_draw_color(pinned_body.color);
-                point_map
-                    .get_mut(&(pinned_body.color_index as usize))
-                    .unwrap_or(&mut vec![])
-                    .push(FPoint::new(
-                        ((pinned_body.x as f32 * zoom) + pan_x) as f32,
-                        ((pinned_body.y as f32 * zoom) + pan_y) as f32,
-                    ));
+            canvas.render_geometry(&vertices, None, &indices).unwrap();
+
+            for body in &significant_bodies {
+                body.render(
+                    pan_x,
+                    pan_y,
+                    zoom,
+                    &mut canvas,
+                    color_vec[body.color_index as usize],
+                );
             }
 
-            // Iterate on bodies not map since we need the order constant to avoid z clipping
-            for body in significant_bodies.iter() {
-                canvas.set_draw_color(color_vec[body.color_index as usize]);
+            render_time = render_start.elapsed()?.as_nanos();
 
-                let points = &point_map[&(body.color_index as usize)];
+            canvas.set_draw_color(Color::RGB(255, 255, 255));
+            let _ = canvas.draw_debug_text(render_mode.to_string().as_str(), Point::new(100, 0));
+            let _ = canvas.draw_debug_text(sim_steps.to_string().as_str(), Point::new(100, 10));
 
-                let _ = canvas.draw_points(&points[..]);
+            if paused {
+                let _ = canvas.draw_debug_text("||", Point::new(80, 0));
+            } else {
+                let _ = canvas.draw_debug_text(">", Point::new(80, 0));
             }
-        }
-
-        canvas.render_geometry(&vertices, None, &indices).unwrap();
-
-        for body in &significant_bodies {
-            body.render(
-                pan_x,
-                pan_y,
-                zoom,
-                &mut canvas,
-                color_vec[body.color_index as usize],
+            let _ = canvas.draw_debug_text(
+                ("Compute time: ".to_string() + &compute_time.to_string()).as_str(),
+                Point::new(180, 0),
             );
+
+            let _ = canvas.draw_debug_text(
+                ("Render time: ".to_string() + &render_time.to_string()).as_str(),
+                Point::new(180, 10),
+            );
+            let _ = canvas.draw_debug_text(
+                ("Body num: ".to_string() + &bodies.len().to_string()).as_str(),
+                Point::new(180, 20),
+            );
+
+            canvas.present();
         }
-
-        render_time = render_start.elapsed()?.as_nanos();
-
-        canvas.set_draw_color(Color::RGB(255, 255, 255));
-        let _ = canvas.draw_debug_text(render_mode.to_string().as_str(), Point::new(100, 0));
-        let _ = canvas.draw_debug_text(sim_steps.to_string().as_str(), Point::new(100, 10));
-
-        if paused {
-            let _ = canvas.draw_debug_text("||", Point::new(80, 0));
-        } else {
-            let _ = canvas.draw_debug_text(">", Point::new(80, 0));
-        }
-        let _ = canvas.draw_debug_text(
-            ("Compute time: ".to_string() + &compute_time.to_string()).as_str(),
-            Point::new(180, 0),
-        );
-
-        let _ = canvas.draw_debug_text(
-            ("Render time: ".to_string() + &render_time.to_string()).as_str(),
-            Point::new(180, 10),
-        );
-        let _ = canvas.draw_debug_text(
-            ("Body num: ".to_string() + &bodies.len().to_string()).as_str(),
-            Point::new(180, 20),
-        );
-
-        canvas.present();
 
         // ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
 
