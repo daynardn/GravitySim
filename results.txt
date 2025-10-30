@@ -20,3 +20,6 @@
 
 # Color index (u64 hash -> u8) ?? how man
 16167737
+
+# not angle but delta y / hyp
+12113446

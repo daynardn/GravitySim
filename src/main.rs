@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::hash::{DefaultHasher, Hash};
+use std::hint::black_box;
 use std::time::SystemTime;
 
 use rayon::iter::Either;
@@ -9,8 +9,6 @@ use sdl3::mouse::MouseButton;
 use sdl3::pixels::{Color, FColor};
 use sdl3::rect::Point;
 use sdl3::render::{Canvas, FPoint, Vertex};
-
-use std::hash::Hasher;
 
 use rayon::prelude::*;
 use sdl3::video::Window;
@@ -532,12 +530,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                             return Either::Right(*body);
                         }
 
-                        let force = body2.mass / (dist_sq * res as f32 + 0.00000001);
+                        let force = body2.mass / (dist_sq * res as f32);
 
-                        let angle = f32::atan2(delta_y, delta_x);
-
-                        body.v_x += force * angle.cos();
-                        body.v_y += force * angle.sin();
+                        body.v_x += force * (delta_x / dist_sq.sqrt());
+                        body.v_y += force * (delta_y / dist_sq.sqrt());
                     }
 
                     Either::Left(*body)
