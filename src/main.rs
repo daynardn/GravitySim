@@ -142,19 +142,19 @@ fn generate_circle_fan_color_edge(
 }
 #[derive(Clone, Copy)]
 struct Body {
-    x: f64,
-    y: f64,
-    init_x: f64,
-    init_y: f64,
-    v_x: f64,
-    v_y: f64,
-    mass: f64,
+    x: f32,
+    y: f32,
+    init_x: f32,
+    init_y: f32,
+    v_x: f32,
+    v_y: f32,
+    mass: f32,
     pinned: bool,
     color: FColor,
 }
 
 impl Body {
-    pub fn new(x: f64, y: f64, v_x: f64, v_y: f64, mass: f64, pinned: bool, color: FColor) -> Self {
+    pub fn new(x: f32, y: f32, v_x: f32, v_y: f32, mass: f32, pinned: bool, color: FColor) -> Self {
         Body {
             x,
             y,
@@ -217,9 +217,9 @@ fn apply_force(body: &mut Body, body2: Body, res: i32) {
         body.v_y = 0.0;
     }
 
-    let force = body2.mass / (dist_sq * res as f64 + 0.00000001);
+    let force = body2.mass / (dist_sq * res as f32 + 0.00000001);
 
-    let angle = f64::atan2(delta_y, delta_x);
+    let angle = f32::atan2(delta_y, delta_x);
 
     body.v_x += force * angle.cos();
     body.v_y += force * angle.sin();
@@ -264,12 +264,12 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut render_mode = 0;
 
     let res = 1.0;
-    let size = (600 as f64 * res) as i32;
+    let size = (600 as f32 * res) as i32;
     for x in -size..size {
         for y in -size / 2..size / 2 {
             bodies.push(Body::new(
-                (x as f64 / res).into(),
-                (y as f64 / res).into(),
+                (x as f32 / res).into(),
+                (y as f32 / res).into(),
                 0.0,
                 0.0,
                 100.0,
@@ -546,8 +546,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         for _ in 0..sim_steps * res * (!paused as i32) {
             // Before pinning
             bodies.par_iter_mut().for_each(|body| {
-                body.x += body.v_x / res as f64;
-                body.y += body.v_y / res as f64;
+                body.x += body.v_x / res as f32;
+                body.y += body.v_y / res as f32;
                 body.v_x *= 0.999999;
                 body.v_y *= 0.999999;
             });
