@@ -124,7 +124,7 @@ fn generate_circle_fan_color_edge(
 
     (vertices, indices)
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct Body {
     x: f32,
     y: f32,
@@ -513,44 +513,47 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let compute_start = SystemTime::now();
         // sim steps per render
         for _ in 0..sim_steps * res * (!paused as i32) {
-            let (bodies_vec, mut pinned_vec) =
-                bodies.par_iter_mut().partition_map(|body: &mut Body| {
-                    // Before pinning
-                    body.x += body.v_x / res as f32;
-                    body.y += body.v_y / res as f32;
-                    body.v_x *= 0.999999;
-                    body.v_y *= 0.999999;
+            bodies.par_iter_mut().for_each(|body: &mut Body| {
+                // Before pinning
+                body.x += body.v_x / res as f32;
+                body.y += body.v_y / res as f32;
+                body.v_x *= 0.999999;
+                body.v_y *= 0.999999;
 
-                    for body2 in &significant_bodies {
-                        let delta_y = body2.y - body.y;
-                        let delta_x = body2.x - body.x;
-                        let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
-                        let dist_sqrt_inv = dist_sq.sqrt().recip();
-                        // f = m1m2/r^2
+                for body2 in &significant_bodies {
+                    let delta_y = body2.y - body.y;
+                    let delta_x = body2.x - body.x;
+                    let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
+                    let dist_sqrt_inv = dist_sq.sqrt().recip();
+                    // f = m1m2/r^2
 
-                        // These are usually both sqrt so it works, collision
-                        if dist_sq < body2.mass {
-                            body.color_index = body2.color_index;
-                            body.pinned = true;
-                            body.x = body_initial_position_map.get(&body.id).unwrap().0;
-                            body.y = body_initial_position_map.get(&body.id).unwrap().1;
-                            body.v_x = 0.0;
-                            body.v_y = 0.0;
-
-                            return Either::Right(*body);
-                        }
-
-                        let force = body2.mass / (dist_sq * res as f32);
-
-                        body.v_x += force * delta_x * dist_sqrt_inv;
-                        body.v_y += force * delta_y * dist_sqrt_inv;
+                    // These are usually both sqrt so it works, collision
+                    if dist_sq < body2.mass {
+                        body.color_index = body2.color_index;
+                        body.pinned = true;
+                        body.x = body_initial_position_map.get(&body.id).unwrap().0;
+                        body.y = body_initial_position_map.get(&body.id).unwrap().1;
+                        body.v_x = 0.0;
+                        body.v_y = 0.0;
                     }
 
-                    Either::Left(*body)
-                });
+                    let force = body2.mass / (dist_sq * res as f32);
 
-            bodies = bodies_vec;
-            pinned_bodies.append(&mut pinned_vec);
+                    body.v_x += force * delta_x * dist_sqrt_inv;
+                    body.v_y += force * delta_y * dist_sqrt_inv;
+                }
+            });
+
+            // Found online
+            let mut index = 0;
+            while index < bodies.len() {
+                if bodies[index].pinned {
+                    // Don't increment index since removed
+                    pinned_bodies.push(bodies.swap_remove(index));
+                } else {
+                    index += 1;
+                }
+            }
         }
 
         sim_steps_taken += 1;
