@@ -1,9 +1,8 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use rayon::iter::{Either, Map};
+use rayon::iter::Either;
 use sdl3::event::Event;
-use sdl3::gpu::ColorComponentFlags;
 use sdl3::keyboard::Keycode;
 use sdl3::mouse::MouseButton;
 use sdl3::pixels::{Color, FColor};
@@ -20,15 +19,6 @@ fn irgb(color: FColor) -> (i32, i32, i32) {
         (rgb.1 * 255.) as i32,
         (rgb.2 * 255.) as i32,
     );
-}
-
-fn irgb_to_fcolor(rgb: (i32, i32, i32)) -> FColor {
-    return FColor {
-        r: rgb.0 as f32 / 255.,
-        g: rgb.1 as f32 / 255.,
-        b: rgb.2 as f32 / 255.,
-        a: 1.0,
-    };
 }
 
 // "Borrowed"
