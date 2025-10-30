@@ -256,13 +256,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pan_y = 0.0;
 
     let mut compute_time = 0;
+    let mut compute_time_total = 0;
     let mut render_time;
 
     let mut zoom = 1.0;
 
     let mut render_mode = 0;
 
-    let res = 0.1;
+    let res = 1.0;
     let size = (600 as f64 * res) as i32;
     for x in -size..size {
         for y in -size / 2..size / 2 {
@@ -318,6 +319,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pinned_bodies: Vec<Body> = vec![];
 
     let mut sim_steps = 1;
+    let mut sim_steps_taken = 0;
     let res = 1;
 
     'running: loop {
@@ -550,18 +552,23 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 body.v_y *= 0.999999;
             });
 
-            for body2 in &significant_bodies {
-                bodies.par_iter_mut().for_each(|body| {
+            bodies.par_iter_mut().for_each(|body| {
+                for body2 in &significant_bodies {
                     apply_force(body, *body2, res);
-                });
-            }
+                }
+            });
 
-            // todo par
             let (bodies_vec, mut pinned_vec): (Vec<Body>, Vec<Body>) =
                 bodies.par_iter().partition(|&body| !body.pinned);
 
             bodies = bodies_vec;
             pinned_bodies.append(&mut pinned_vec);
+        }
+
+        sim_steps_taken += 1;
+        compute_time_total += compute_start.elapsed()?.as_nanos();
+        if sim_steps_taken == 10 {
+            println!("Compute time: {:?}", compute_time_total / sim_steps_taken);
         }
 
         compute_time = (compute_start.elapsed()?.as_nanos() * 10000)
