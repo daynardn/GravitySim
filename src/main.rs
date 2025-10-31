@@ -230,6 +230,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut compute_time = 0;
     let mut compute_time_total = 0;
     let mut render_time;
+    let mut render_time_total = 0;
 
     let mut zoom = 1.0;
 
@@ -482,6 +483,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             render_time = render_start.elapsed()?.as_nanos();
+            render_time_total += render_time;
 
             canvas.set_draw_color(Color::RGB(255, 255, 255));
             let _ = canvas.draw_debug_text(render_mode.to_string().as_str(), Point::new(100, 0));
@@ -579,6 +581,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         compute_time_total += compute_start.elapsed()?.as_nanos();
         if sim_steps_taken == 10 {
             println!("Compute time: {:?}", compute_time_total / sim_steps_taken);
+            println!("Render time : {:?}", render_time_total / sim_steps_taken)
         }
 
         compute_time = (compute_start.elapsed()?.as_nanos() * 10000)

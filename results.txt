@@ -35,3 +35,7 @@
 
 # u64 hash but only render when needed
 2399807
+
+# add render time
+Compute time: 2367765
+Render time : 68440658
