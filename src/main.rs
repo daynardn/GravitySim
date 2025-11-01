@@ -1,12 +1,11 @@
 #![feature(portable_simd)]
 
-use std::any::Any;
 use std::collections::HashMap;
-use std::ops::{Mul, Sub};
+use std::ops::Sub;
 use std::ptr;
-use std::simd::cmp::{SimdOrd, SimdPartialOrd};
+use std::simd::cmp::SimdPartialOrd;
 use std::simd::num::SimdFloat;
-use std::simd::{StdFloat, f32x4, f32x8};
+use std::simd::{StdFloat, f32x4};
 use std::time::SystemTime;
 
 use sdl3::event::Event;
@@ -543,19 +542,17 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Before pinning
                 body.x += body.v_x;
                 body.y += body.v_y;
-                body.v_x *= 0.999999;
-                body.v_y *= 0.999999;
 
-                let ys = ys.sub(f32x4::splat(body.y));
-                let xs = xs.sub(f32x4::splat(body.x));
+                let y_deltas = ys.sub(f32x4::splat(body.y));
+                let x_deltas = xs.sub(f32x4::splat(body.x));
 
-                let dists_sq = xs * xs + ys * ys;
+                let dists_sq = x_deltas * x_deltas + y_deltas * y_deltas;
 
                 // These are usually both sqrt so it works, collision
                 // collision check
                 let collision_index = dists_sq.simd_lt(masses).first_set();
 
-                if collision_index != None {
+                if collision_index.is_some() {
                     body.color_index = significant_bodies[collision_index.unwrap()].color_index;
                     body.pinned = true;
                     body.x = body_initial_position_map[&body.id].0;
@@ -564,14 +561,14 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                     body.v_y = 0.0;
                 }
 
-                let dists = dists_sq.sqrt().recip();
+                let dists = dists_sq.sqrt();
 
                 // mass2 / dist
                 let forces = masses / dists_sq;
 
-                let scaled_force = forces * dists;
-                let v_x = scaled_force * xs;
-                let v_y = scaled_force * ys;
+                let scaled_force = forces / dists;
+                let v_x = scaled_force * x_deltas;
+                let v_y = scaled_force * y_deltas;
 
                 body.v_x += v_x.reduce_sum();
                 body.v_y += v_y.reduce_sum();
