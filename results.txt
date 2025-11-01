@@ -43,3 +43,7 @@ Render time : 68440658
 # simd
 Compute time: 1838774
 Render time : 67484989
+
+# simd f32x4 and also remove loop
+Compute time: 1639406
+Render time : 66449173

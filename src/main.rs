@@ -4,8 +4,9 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::ops::{Mul, Sub};
 use std::ptr;
+use std::simd::cmp::{SimdOrd, SimdPartialOrd};
 use std::simd::num::SimdFloat;
-use std::simd::{StdFloat, f32x8};
+use std::simd::{StdFloat, f32x4, f32x8};
 use std::time::SystemTime;
 
 use sdl3::event::Event;
@@ -287,6 +288,21 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         body_initial_position_map.insert(body.id, (body.x, body.y));
     }
 
+    let mut mass_array: Vec<f32> = significant_bodies.iter().map(|body| body.mass).collect();
+    mass_array.resize(4, 0.0);
+    let boxed_array: Box<[f32; 4]> = mass_array.into_boxed_slice().try_into().unwrap();
+    let masses: f32x4 = f32x4::from_array(*boxed_array);
+
+    let mut y_array: Vec<f32> = significant_bodies.iter().map(|body| body.y).collect();
+    y_array.resize(4, 0.0);
+    let boxed_array: Box<[f32; 4]> = y_array.into_boxed_slice().try_into().unwrap();
+    let ys: f32x4 = f32x4::from_array(*boxed_array);
+
+    let mut x_array: Vec<f32> = significant_bodies.iter().map(|body| body.x).collect();
+    x_array.resize(4, 0.0);
+    let boxed_array: Box<[f32; 4]> = x_array.into_boxed_slice().try_into().unwrap();
+    let xs: f32x4 = f32x4::from_array(*boxed_array);
+
     'running: loop {
         for event in event_pump.poll_iter() {
             match event {
@@ -523,22 +539,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let compute_start = SystemTime::now();
         // sim steps per render
         for _ in 0..sim_steps * (!paused as i32) {
-            let mut mass_array: Vec<f32> =
-                significant_bodies.iter().map(|body| body.mass).collect();
-            mass_array.resize(8, 0.0);
-            let boxed_array: Box<[f32; 8]> = mass_array.into_boxed_slice().try_into().unwrap();
-            let masses: f32x8 = f32x8::from_array(*boxed_array);
-
-            let mut y_array: Vec<f32> = significant_bodies.iter().map(|body| body.y).collect();
-            y_array.resize(8, 0.0);
-            let boxed_array: Box<[f32; 8]> = y_array.into_boxed_slice().try_into().unwrap();
-            let ys: f32x8 = f32x8::from_array(*boxed_array);
-
-            let mut x_array: Vec<f32> = significant_bodies.iter().map(|body| body.x).collect();
-            x_array.resize(8, 0.0);
-            let boxed_array: Box<[f32; 8]> = x_array.into_boxed_slice().try_into().unwrap();
-            let xs: f32x8 = f32x8::from_array(*boxed_array);
-
             bodies.par_iter_mut().for_each(|body: &mut Body| {
                 // Before pinning
                 body.x += body.v_x;
@@ -546,35 +546,35 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                 body.v_x *= 0.999999;
                 body.v_y *= 0.999999;
 
-                let ys = ys.sub(f32x8::splat(body.y));
-                let xs = xs.sub(f32x8::splat(body.x));
+                let ys = ys.sub(f32x4::splat(body.y));
+                let xs = xs.sub(f32x4::splat(body.x));
 
                 let dists_sq = xs * xs + ys * ys;
+
+                // These are usually both sqrt so it works, collision
+                // collision check
+                let collision_index = dists_sq.simd_lt(masses).first_set();
+
+                if collision_index != None {
+                    body.color_index = significant_bodies[collision_index.unwrap()].color_index;
+                    body.pinned = true;
+                    body.x = body_initial_position_map[&body.id].0;
+                    body.y = body_initial_position_map[&body.id].1;
+                    body.v_x = 0.0;
+                    body.v_y = 0.0;
+                }
+
                 let dists = dists_sq.sqrt().recip();
 
                 // mass2 / dist
                 let forces = masses / dists_sq;
 
-                // for body2 in &significant_bodies {}
-                // todo f32x8 for significant bodies
-                for (i, body2) in significant_bodies.iter().enumerate() {
-                    let dist_sq = dists_sq[i];
-                    // f = m1m2/r^2
+                let scaled_force = forces * dists;
+                let v_x = scaled_force * xs;
+                let v_y = scaled_force * ys;
 
-                    // These are usually both sqrt so it works, collision
-                    if dist_sq < body2.mass {
-                        body.color_index = body2.color_index;
-                        body.pinned = true;
-                        body.x = body_initial_position_map[&body.id].0;
-                        body.y = body_initial_position_map[&body.id].1;
-                        body.v_x = 0.0;
-                        body.v_y = 0.0;
-                        break;
-                    }
-
-                    body.v_x += forces[i] * xs[i] * dists[i];
-                    body.v_y += forces[i] * ys[i] * dists[i];
-                }
+                body.v_x += v_x.reduce_sum();
+                body.v_y += v_y.reduce_sum();
             });
 
             // Found online
