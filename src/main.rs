@@ -1,5 +1,11 @@
+#![feature(portable_simd)]
+
+use std::any::Any;
 use std::collections::HashMap;
+use std::ops::{Mul, Sub};
 use std::ptr;
+use std::simd::num::SimdFloat;
+use std::simd::{StdFloat, f32x8};
 use std::time::SystemTime;
 
 use sdl3::event::Event;
@@ -195,6 +201,8 @@ impl Body {
 
         canvas.render_geometry(&vertices, None, &indices).unwrap();
     }
+
+    // fn get
 }
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -272,7 +280,6 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sim_steps = 1;
     let mut sim_steps_taken = 0;
     let mut render_timer = SystemTime::now();
-    let res = 1;
 
     let mut body_initial_position_map: HashMap<u64, (f32, f32)> = HashMap::new();
 
@@ -515,19 +522,43 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let compute_start = SystemTime::now();
         // sim steps per render
-        for _ in 0..sim_steps * res * (!paused as i32) {
+        for _ in 0..sim_steps * (!paused as i32) {
+            let mut mass_array: Vec<f32> =
+                significant_bodies.iter().map(|body| body.mass).collect();
+            mass_array.resize(8, 0.0);
+            let boxed_array: Box<[f32; 8]> = mass_array.into_boxed_slice().try_into().unwrap();
+            let masses: f32x8 = f32x8::from_array(*boxed_array);
+
+            let mut y_array: Vec<f32> = significant_bodies.iter().map(|body| body.y).collect();
+            y_array.resize(8, 0.0);
+            let boxed_array: Box<[f32; 8]> = y_array.into_boxed_slice().try_into().unwrap();
+            let ys: f32x8 = f32x8::from_array(*boxed_array);
+
+            let mut x_array: Vec<f32> = significant_bodies.iter().map(|body| body.x).collect();
+            x_array.resize(8, 0.0);
+            let boxed_array: Box<[f32; 8]> = x_array.into_boxed_slice().try_into().unwrap();
+            let xs: f32x8 = f32x8::from_array(*boxed_array);
+
             bodies.par_iter_mut().for_each(|body: &mut Body| {
                 // Before pinning
-                body.x += body.v_x / res as f32;
-                body.y += body.v_y / res as f32;
+                body.x += body.v_x;
+                body.y += body.v_y;
                 body.v_x *= 0.999999;
                 body.v_y *= 0.999999;
 
-                for body2 in &significant_bodies {
-                    let delta_y = body2.y - body.y;
-                    let delta_x = body2.x - body.x;
-                    let dist_sq = (delta_x).powi(2) + (delta_y).powi(2);
-                    let dist_sqrt_inv = dist_sq.sqrt().recip();
+                let ys = ys.sub(f32x8::splat(body.y));
+                let xs = xs.sub(f32x8::splat(body.x));
+
+                let dists_sq = xs * xs + ys * ys;
+                let dists = dists_sq.sqrt().recip();
+
+                // mass2 / dist
+                let forces = masses / dists_sq;
+
+                // for body2 in &significant_bodies {}
+                // todo f32x8 for significant bodies
+                for (i, body2) in significant_bodies.iter().enumerate() {
+                    let dist_sq = dists_sq[i];
                     // f = m1m2/r^2
 
                     // These are usually both sqrt so it works, collision
@@ -541,10 +572,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
                         break;
                     }
 
-                    let force = body2.mass / (dist_sq * res as f32);
-
-                    body.v_x += force * delta_x * dist_sqrt_inv;
-                    body.v_y += force * delta_y * dist_sqrt_inv;
+                    body.v_x += forces[i] * xs[i] * dists[i];
+                    body.v_y += forces[i] * ys[i] * dists[i];
                 }
             });
 
